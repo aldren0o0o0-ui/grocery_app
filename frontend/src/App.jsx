@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
 import { AuthProvider } from "./modules/auth/AuthContext";
 import useAuth from "./modules/auth/useAuth";
 import ProtectedRoute from "./modules/auth/ProtectedRoute";
@@ -6,6 +6,8 @@ import RoleRoute from "./modules/auth/RoleRoute";
 
 import LoginPage from "./pages/LoginPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
+import CategoriesPage from "./pages/CategoriesPage";
+import ProductsPage from "./pages/ProductsPage";
 
 const HomePage = () => {
   const { user, logout } = useAuth();
@@ -88,22 +90,33 @@ const HomePage = () => {
           </p>
         </div>
 
-        <div style={{ marginTop: "2rem", paddingTop: "1.5rem", borderTop: "1px solid #f3f4f6" }}>
-          <h3 style={{ fontSize: "1rem", color: "#4b5563" }}>Wave 2 RBAC Navigation Test</h3>
-          <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
-            The link below requires OWNER or ADMIN role. CASHIER or STAFF users clicking it will be safely redirected to the Unauthorized page.
-          </p>
+        <div style={{ marginTop: "2rem", paddingTop: "1.5rem", borderTop: "1px solid #f3f4f6", display: "flex", gap: "1rem" }}>
           <Link
-            to="/admin-preview"
+            to="/products"
             style={{
-              display: "inline-block",
-              marginTop: "0.5rem",
-              color: "#2563eb",
+              padding: "0.6rem 1.25rem",
+              backgroundColor: "#2563eb",
+              color: "#ffffff",
+              borderRadius: "6px",
               fontWeight: "600",
-              textDecoration: "underline",
+              textDecoration: "none",
             }}
           >
-            Visit Admin-Only Management Preview &rarr;
+            Go to Products Catalog &rarr;
+          </Link>
+          <Link
+            to="/categories"
+            style={{
+              padding: "0.6rem 1.25rem",
+              backgroundColor: "#f1f5f9",
+              border: "1px solid #cbd5e1",
+              color: "#334155",
+              borderRadius: "6px",
+              fontWeight: "600",
+              textDecoration: "none",
+            }}
+          >
+            Manage Categories
           </Link>
         </div>
       </main>
@@ -134,12 +147,28 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-          {/* Standard Authenticated Route */}
+          {/* Standard Authenticated Routes */}
           <Route
             path="/"
             element={
               <ProtectedRoute>
                 <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/products"
+            element={
+              <ProtectedRoute>
+                <ProductsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/categories"
+            element={
+              <ProtectedRoute>
+                <CategoriesPage />
               </ProtectedRoute>
             }
           />
@@ -155,6 +184,9 @@ function App() {
               </ProtectedRoute>
             }
           />
+
+          {/* Fallback */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

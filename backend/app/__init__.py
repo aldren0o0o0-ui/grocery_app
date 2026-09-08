@@ -22,9 +22,13 @@ def create_app():
     # Register blueprints
     from .modules.auth.routes import auth_bp
     from .modules.users.routes import users_bp
+    from .modules.categories.routes import categories_bp
+    from .modules.products.routes import products_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(categories_bp)
+    app.register_blueprint(products_bp)
 
     raw_frontend_url = app.config.get("FRONTEND_URL", "http://localhost:5173")
     origins = [o.strip() for o in raw_frontend_url.split(",") if o.strip()]
