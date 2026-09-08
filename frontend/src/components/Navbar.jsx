@@ -71,6 +71,21 @@ export const Navbar = () => {
           >
             Categories
           </Link>
+          {["OWNER", "ADMIN", "STAFF"].includes(user?.role) && (
+            <Link
+              to="/suppliers"
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: "600",
+                color: isCurrent("/suppliers") ? "#2563eb" : "#4b5563",
+                textDecoration: "none",
+                borderBottom: isCurrent("/suppliers") ? "2px solid #2563eb" : "2px solid transparent",
+                paddingBottom: "0.25rem",
+              }}
+            >
+              Suppliers
+            </Link>
+          )}
         </nav>
       </div>
 

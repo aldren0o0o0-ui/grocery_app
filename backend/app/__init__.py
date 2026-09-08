@@ -25,12 +25,14 @@ def create_app():
     from .modules.categories.routes import categories_bp
     from .modules.products.routes import products_bp
     from .modules.inventory.routes import inventory_bp
+    from .modules.suppliers.routes import suppliers_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
     app.register_blueprint(categories_bp)
     app.register_blueprint(products_bp)
     app.register_blueprint(inventory_bp)
+    app.register_blueprint(suppliers_bp)
 
     raw_frontend_url = app.config.get("FRONTEND_URL", "http://localhost:5173")
     origins = [o.strip() for o in raw_frontend_url.split(",") if o.strip()]

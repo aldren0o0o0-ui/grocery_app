@@ -9,6 +9,7 @@ import UnauthorizedPage from "./pages/UnauthorizedPage";
 import CategoriesPage from "./pages/CategoriesPage";
 import ProductsPage from "./pages/ProductsPage";
 import InventoryPage from "./pages/InventoryPage";
+import SuppliersPage from "./pages/SuppliersPage";
 
 const HomePage = () => {
   const { user, logout } = useAuth();
@@ -178,6 +179,16 @@ function App() {
             element={
               <ProtectedRoute>
                 <CategoriesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/suppliers"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "ADMIN", "STAFF"]}>
+                  <SuppliersPage />
+                </RoleRoute>
               </ProtectedRoute>
             }
           />
