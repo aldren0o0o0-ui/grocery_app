@@ -29,6 +29,7 @@ def create_app():
     from .modules.purchasing.routes import purchasing_bp
     from .modules.sales.routes import sales_bp
     from .modules.returns.routes import returns_bp
+    from .modules.expenses.routes import expense_categories_bp, expenses_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(users_bp)
@@ -39,6 +40,8 @@ def create_app():
     app.register_blueprint(purchasing_bp)
     app.register_blueprint(sales_bp)
     app.register_blueprint(returns_bp)
+    app.register_blueprint(expense_categories_bp)
+    app.register_blueprint(expenses_bp)
 
     raw_frontend_url = app.config.get("FRONTEND_URL", "http://localhost:5173")
     origins = [o.strip() for o in raw_frontend_url.split(",") if o.strip()]

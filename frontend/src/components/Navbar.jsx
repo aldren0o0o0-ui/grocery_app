@@ -146,6 +146,21 @@ export const Navbar = () => {
               Purchases
             </Link>
           )}
+          {["OWNER", "STAFF"].includes(user?.role) && (
+            <Link
+              to="/expenses"
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: "600",
+                color: isCurrent("/expenses") ? "#2563eb" : "#4b5563",
+                textDecoration: "none",
+                borderBottom: isCurrent("/expenses") ? "2px solid #2563eb" : "2px solid transparent",
+                paddingBottom: "0.25rem",
+              }}
+            >
+              Expenses
+            </Link>
+          )}
           {user?.role === "OWNER" && (
             <Link
               to="/users"

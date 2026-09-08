@@ -112,3 +112,38 @@ def register_commands(app: Flask) -> None:
             db.session.rollback()
             click.echo(f"Error deleting users: {str(e)}", err=True)
 
+    @app.cli.command("seed-expense-categories")
+    def seed_expense_categories_command():
+        """Idempotently seed standard default expense categories."""
+        from app.modules.expenses.models import ExpenseCategory
+        from sqlalchemy import func
+
+        defaults = [
+            {"name": "Rent", "description": "Store rental and lease payments"},
+            {"name": "Electricity", "description": "Utility bills for power and lighting"},
+            {"name": "Water", "description": "Utility bills for water supply"},
+            {"name": "Internet", "description": "Store telecommunications and broadband fees"},
+            {"name": "Transportation", "description": "Delivery, fuel, and logistics expenses"},
+            {"name": "Maintenance", "description": "Store repairs, equipment servicing, and upkeep"},
+            {"name": "Supplies", "description": "Packaging, bags, stationery, and consumables"},
+            {"name": "Miscellaneous", "description": "General petty cash and unforeseen operational expenses"},
+        ]
+
+        seeded = []
+        for d in defaults:
+            clean_name = d["name"].strip()
+            existing = db.session.execute(
+                db.select(ExpenseCategory).filter(func.lower(ExpenseCategory.name) == clean_name.lower())
+            ).scalar_one_or_none()
+            if not existing:
+                cat = ExpenseCategory(name=clean_name, description=d["description"], is_active=True)
+                db.session.add(cat)
+                seeded.append(clean_name)
+
+        db.session.commit()
+        if seeded:
+            click.echo(f"Successfully seeded expense categories: {', '.join(seeded)}")
+        else:
+            click.echo("All standard expense categories already exist. No changes made.")
+
+

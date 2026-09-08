@@ -16,6 +16,7 @@ import PurchaseDetailPage from "./pages/PurchaseDetailPage";
 import POSPage from "./pages/POSPage";
 import SalesHistoryPage from "./pages/SalesHistoryPage";
 import ReturnsPage from "./pages/ReturnsPage";
+import ExpensesPage from "./pages/ExpensesPage";
 
 const HomePage = () => {
   const { user, logout } = useAuth();
@@ -304,6 +305,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["OWNER", "CASHIER"]}>
                   <ReturnsPage />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/expenses"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
+                  <ExpensesPage />
                 </RoleRoute>
               </ProtectedRoute>
             }
