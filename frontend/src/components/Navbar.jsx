@@ -46,6 +46,19 @@ export const Navbar = () => {
             Products
           </Link>
           <Link
+            to="/inventory"
+            style={{
+              fontSize: "0.875rem",
+              fontWeight: "600",
+              color: isCurrent("/inventory") ? "#2563eb" : "#4b5563",
+              textDecoration: "none",
+              borderBottom: isCurrent("/inventory") ? "2px solid #2563eb" : "2px solid transparent",
+              paddingBottom: "0.25rem",
+            }}
+          >
+            Inventory
+          </Link>
+          <Link
             to="/categories"
             style={{
               fontSize: "0.875rem",
