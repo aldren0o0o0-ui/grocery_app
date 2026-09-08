@@ -9,7 +9,7 @@ products_bp = Blueprint("products", __name__, url_prefix="/api/products")
 
 @products_bp.get("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def list_products():
     try:
         page = request.args.get("page", default=1, type=int)
@@ -40,7 +40,7 @@ def list_products():
 
 @products_bp.get("/<int:product_id>")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def get_product(product_id: int):
     try:
         product = ProductService.get_product(product_id)
@@ -53,7 +53,7 @@ def get_product(product_id: int):
 
 @products_bp.post("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def create_product():
     try:
         data = request.get_json() or {}
@@ -67,7 +67,7 @@ def create_product():
 
 @products_bp.patch("/<int:product_id>")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def update_product(product_id: int):
     try:
         data = request.get_json() or {}
@@ -81,7 +81,7 @@ def update_product(product_id: int):
 
 @products_bp.patch("/<int:product_id>/status")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def set_product_status(product_id: int):
     try:
         data = request.get_json() or {}

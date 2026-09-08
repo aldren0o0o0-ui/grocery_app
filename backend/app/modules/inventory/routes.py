@@ -11,7 +11,7 @@ inventory_bp = Blueprint("inventory", __name__, url_prefix="/api/inventory")
 
 @inventory_bp.get("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def list_inventory():
     """Lists current inventory stock balances with filters and pagination."""
     try:
@@ -41,7 +41,7 @@ def list_inventory():
 
 @inventory_bp.get("/<int:product_id>")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def get_product_stock(product_id: int):
     """Retrieves current stock balance and reorder levels for a specific product."""
     try:
@@ -55,7 +55,7 @@ def get_product_stock(product_id: int):
 
 @inventory_bp.get("/<int:product_id>/movements")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def list_product_movements(product_id: int):
     """Retrieves paginated immutable stock movement ledger records for a product."""
     try:
@@ -97,7 +97,7 @@ def list_product_movements(product_id: int):
 
 @inventory_bp.get("/low-stock")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def list_low_stock():
     """Lists products that have reached or dropped below their reorder level."""
     try:
@@ -112,7 +112,7 @@ def list_low_stock():
 
 @inventory_bp.post("/adjustments")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def adjust_stock():
     """Performs an authorized manual stock adjustment (IN or OUT)."""
     try:

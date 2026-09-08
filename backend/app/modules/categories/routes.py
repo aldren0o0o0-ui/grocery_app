@@ -9,7 +9,7 @@ categories_bp = Blueprint("categories", __name__, url_prefix="/api/categories")
 
 @categories_bp.get("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def list_categories():
     try:
         page = request.args.get("page", default=1, type=int)
@@ -29,7 +29,7 @@ def list_categories():
 
 @categories_bp.get("/<int:category_id>")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "CASHIER", "STAFF")
+@require_roles("OWNER", "STAFF", "CASHIER")
 def get_category(category_id: int):
     try:
         category = CategoryService.get_category(category_id)
@@ -42,7 +42,7 @@ def get_category(category_id: int):
 
 @categories_bp.post("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def create_category():
     try:
         data = request.get_json() or {}
@@ -56,7 +56,7 @@ def create_category():
 
 @categories_bp.patch("/<int:category_id>")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def update_category(category_id: int):
     try:
         data = request.get_json() or {}
@@ -70,7 +70,7 @@ def update_category(category_id: int):
 
 @categories_bp.patch("/<int:category_id>/status")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def set_category_status(category_id: int):
     try:
         data = request.get_json() or {}

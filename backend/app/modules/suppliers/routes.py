@@ -9,7 +9,7 @@ suppliers_bp = Blueprint("suppliers", __name__, url_prefix="/api/suppliers")
 
 @suppliers_bp.get("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "STAFF")
+@require_roles("OWNER", "STAFF")
 def list_suppliers():
     """Lists suppliers with search, active status filter, and pagination."""
     try:
@@ -35,7 +35,7 @@ def list_suppliers():
 
 @suppliers_bp.get("/<int:supplier_id>")
 @jwt_required()
-@require_roles("OWNER", "ADMIN", "STAFF")
+@require_roles("OWNER", "STAFF")
 def get_supplier(supplier_id: int):
     """Retrieves a single supplier by ID."""
     try:
@@ -49,7 +49,7 @@ def get_supplier(supplier_id: int):
 
 @suppliers_bp.post("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def create_supplier():
     """Creates a new supplier."""
     try:
@@ -68,7 +68,7 @@ def create_supplier():
 
 @suppliers_bp.patch("/<int:supplier_id>")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def update_supplier(supplier_id: int):
     """Updates supplier attributes."""
     try:
@@ -87,7 +87,7 @@ def update_supplier(supplier_id: int):
 
 @suppliers_bp.patch("/<int:supplier_id>/status")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def set_supplier_status(supplier_id: int):
     """Activates or deactivates a supplier without deletion."""
     try:

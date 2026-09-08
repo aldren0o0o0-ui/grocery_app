@@ -2,14 +2,14 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 describe("Frontend Catalog Architecture & Invariant Tests", () => {
-  test("Catalog management authorization policy allows OWNER and ADMIN, rejects CASHIER and STAFF", () => {
+  test("Catalog management authorization policy allows OWNER, rejects CASHIER, STAFF, and ADMIN", () => {
     const canManageCatalog = (role) => {
       if (!role) return false;
-      return ["OWNER", "ADMIN"].includes(role);
+      return role === "OWNER";
     };
 
     assert.equal(canManageCatalog("OWNER"), true);
-    assert.equal(canManageCatalog("ADMIN"), true);
+    assert.equal(canManageCatalog("ADMIN"), false);
     assert.equal(canManageCatalog("CASHIER"), false);
     assert.equal(canManageCatalog("STAFF"), false);
     assert.equal(canManageCatalog(null), false);

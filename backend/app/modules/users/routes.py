@@ -41,9 +41,9 @@ def change_password():
 
 @users_bp.get("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def list_users():
-    """Lists team users with optional role, status, and search filters (Owner/Admin only)."""
+    """Lists team users with optional role, status, and search filters (Owner only)."""
     try:
         role = request.args.get("role")
         is_active_arg = request.args.get("is_active")
@@ -65,7 +65,7 @@ def list_users():
 
 @users_bp.post("")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def create_user():
     """Provisions a new user account (Staff, Cashier, or Owner) by an authorized Owner."""
     try:
@@ -99,7 +99,7 @@ def create_user():
 
 @users_bp.patch("/<int:user_id>/status")
 @jwt_required()
-@require_roles("OWNER", "ADMIN")
+@require_roles("OWNER")
 def toggle_user_status(user_id: int):
     """Activates or deactivates a user account (prevents self-deactivation)."""
     try:

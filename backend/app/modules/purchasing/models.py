@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from enum import Enum
 from typing import TYPE_CHECKING, List
-from sqlalchemy import CheckConstraint, Date, ForeignKey, Integer, Numeric, String
+from sqlalchemy import CheckConstraint, Date, ForeignKey, Integer, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.extensions import db
@@ -71,6 +71,7 @@ class PurchaseItem(CreatedAtMixin, db.Model):
         CheckConstraint("quantity > 0", name="ck_purchase_items_quantity_positive"),
         CheckConstraint("unit_cost >= 0", name="ck_purchase_items_unit_cost_non_negative"),
         CheckConstraint("subtotal >= 0", name="ck_purchase_items_subtotal_non_negative"),
+        UniqueConstraint("purchase_id", "product_id", name="uq_purchase_items_purchase_product"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

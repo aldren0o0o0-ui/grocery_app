@@ -4,7 +4,7 @@ from app.common.errors import AppError
 from app.modules.users.models import User
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-ALLOWED_ROLES = {"STAFF", "CASHIER", "OWNER", "ADMIN"}
+ALLOWED_ROLES = {"STAFF", "CASHIER", "OWNER"}
 
 
 def validate_create_user_input(data: Dict[str, Any]) -> Tuple[str, str, str, str, str]:
@@ -41,8 +41,6 @@ def validate_create_user_input(data: Dict[str, Any]) -> Tuple[str, str, str, str
     clean_role = role.strip().upper()
     if clean_role not in ALLOWED_ROLES:
         raise AppError("VALIDATION_ERROR", f"Invalid role '{role}'. Allowed roles: OWNER, STAFF, CASHIER.", 400)
-    if clean_role == "ADMIN":
-        clean_role = "OWNER"
 
     return clean_role, first_name.strip(), last_name.strip(), clean_email, password
 

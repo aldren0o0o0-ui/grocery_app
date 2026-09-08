@@ -2,28 +2,28 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 describe("Frontend Supplier Architecture & Invariant Tests", () => {
-  test("Supplier management authorization policy permits OWNER and ADMIN, rejects CASHIER and STAFF", () => {
+  test("Supplier management authorization policy permits OWNER, rejects CASHIER, STAFF, and ADMIN", () => {
     const canManageSuppliers = (role) => {
       if (!role) return false;
-      return ["OWNER", "ADMIN"].includes(role);
+      return role === "OWNER";
     };
 
     assert.equal(canManageSuppliers("OWNER"), true);
-    assert.equal(canManageSuppliers("ADMIN"), true);
+    assert.equal(canManageSuppliers("ADMIN"), false);
     assert.equal(canManageSuppliers("STAFF"), false);
     assert.equal(canManageSuppliers("CASHIER"), false);
     assert.equal(canManageSuppliers(null), false);
     assert.equal(canManageSuppliers(undefined), false);
   });
 
-  test("Supplier viewing authorization policy permits OWNER, ADMIN, and STAFF, strictly forbids CASHIER", () => {
+  test("Supplier viewing authorization policy permits OWNER and STAFF, strictly forbids CASHIER and ADMIN", () => {
     const canViewSuppliers = (role) => {
       if (!role) return false;
-      return ["OWNER", "ADMIN", "STAFF"].includes(role);
+      return ["OWNER", "STAFF"].includes(role);
     };
 
     assert.equal(canViewSuppliers("OWNER"), true);
-    assert.equal(canViewSuppliers("ADMIN"), true);
+    assert.equal(canViewSuppliers("ADMIN"), false);
     assert.equal(canViewSuppliers("STAFF"), true);
     assert.equal(canViewSuppliers("CASHIER"), false);
     assert.equal(canViewSuppliers(null), false);

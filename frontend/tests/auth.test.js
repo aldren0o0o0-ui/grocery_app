@@ -18,17 +18,17 @@ describe("Frontend Auth Architecture & Client Tests", () => {
       return allowedRoles.includes(userRole);
     };
 
-    const adminAllowed = ["OWNER", "ADMIN"];
+    const ownerAllowed = ["OWNER"];
 
     // Authorized cases
-    assert.equal(isRoleAuthorized("OWNER", adminAllowed), true);
-    assert.equal(isRoleAuthorized("ADMIN", adminAllowed), true);
+    assert.equal(isRoleAuthorized("OWNER", ownerAllowed), true);
 
     // Unauthorized cases
-    assert.equal(isRoleAuthorized("CASHIER", adminAllowed), false);
-    assert.equal(isRoleAuthorized("STAFF", adminAllowed), false);
-    assert.equal(isRoleAuthorized(null, adminAllowed), false);
-    assert.equal(isRoleAuthorized(undefined, adminAllowed), false);
+    assert.equal(isRoleAuthorized("ADMIN", ownerAllowed), false);
+    assert.equal(isRoleAuthorized("CASHIER", ownerAllowed), false);
+    assert.equal(isRoleAuthorized("STAFF", ownerAllowed), false);
+    assert.equal(isRoleAuthorized(null, ownerAllowed), false);
+    assert.equal(isRoleAuthorized(undefined, ownerAllowed), false);
   });
 
   test("Protected route redirection policy determines correct navigation target", () => {
@@ -66,13 +66,13 @@ describe("Frontend Auth Architecture & Client Tests", () => {
 
     // Case 2: Authenticated but wrong role
     assert.deepEqual(
-      evaluateRoleRoute({ isAuthenticated: true, userRole: "CASHIER", allowedRoles: ["OWNER", "ADMIN"] }),
+      evaluateRoleRoute({ isAuthenticated: true, userRole: "CASHIER", allowedRoles: ["OWNER"] }),
       { action: "REDIRECT_UNAUTHORIZED" }
     );
 
     // Case 3: Authenticated and correct role
     assert.deepEqual(
-      evaluateRoleRoute({ isAuthenticated: true, userRole: "ADMIN", allowedRoles: ["OWNER", "ADMIN"] }),
+      evaluateRoleRoute({ isAuthenticated: true, userRole: "OWNER", allowedRoles: ["OWNER"] }),
       { action: "RENDER_CHILDREN" }
     );
   });

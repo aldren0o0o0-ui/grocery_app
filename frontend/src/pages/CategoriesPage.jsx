@@ -10,7 +10,7 @@ import {
 
 export const CategoriesPage = () => {
   const { user } = useAuth();
-  const canManage = ["OWNER", "ADMIN"].includes(user?.role);
+  const canManage = user?.role === "OWNER";
 
   const [categories, setCategories] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, per_page: 10, total: 0, pages: 1 });

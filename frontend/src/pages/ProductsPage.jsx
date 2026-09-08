@@ -11,7 +11,7 @@ import { getCategoriesApi } from "../modules/categories/api";
 
 export const ProductsPage = () => {
   const { user } = useAuth();
-  const canManage = ["OWNER", "ADMIN"].includes(user?.role);
+  const canManage = user?.role === "OWNER";
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);

@@ -16,7 +16,7 @@ from app.common.errors import AppError
 
 def main():
     parser = argparse.ArgumentParser(description="Create a user account for testing.")
-    parser.add_argument("--role", choices=["OWNER", "ADMIN", "STAFF", "CASHIER"], help="User role")
+    parser.add_argument("--role", choices=["OWNER", "STAFF", "CASHIER"], help="User role")
     parser.add_argument("--email", help="User email address")
     parser.add_argument("--password", help="User password (at least 8 characters)")
     parser.add_argument("--first-name", help="User first name")
@@ -31,13 +31,11 @@ def main():
     role = args.role
     if role:
         role = role.strip().upper()
-        if role == "ADMIN":
-            role = "OWNER"
 
     if not role:
         print("\nSelect user role:")
-        print("  1. OWNER   (Owner / Admin - Full management: catalog, inventory, suppliers)")
-        print("  2. STAFF   (General store staff - operational view, read-only catalog/suppliers)")
+        print("  1. OWNER   (Business Owner - Full store and management control)")
+        print("  2. STAFF   (General store staff - operational view, inventory & purchases)")
         print("  3. CASHIER (POS sales and checkout)")
         choice = input("Enter choice [1-3] or role name: ").strip()
         role_map = {
@@ -45,13 +43,10 @@ def main():
             "2": "STAFF",
             "3": "CASHIER",
             "OWNER": "OWNER",
-            "ADMIN": "OWNER",
             "STAFF": "STAFF",
             "CASHIER": "CASHIER",
         }
         role = role_map.get(choice, choice.upper())
-        if role == "ADMIN":
-            role = "OWNER"
 
     first_name = args.first_name
     if not first_name:

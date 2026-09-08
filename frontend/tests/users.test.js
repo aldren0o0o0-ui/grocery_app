@@ -2,14 +2,14 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 describe("Frontend User Management Architecture & Invariant Tests", () => {
-  test("User management authorization policy allows OWNER and ADMIN, rejects CASHIER and STAFF", () => {
+  test("User management authorization policy allows OWNER, rejects CASHIER, STAFF, and invalid roles", () => {
     const canManageUsers = (role) => {
       if (!role) return false;
-      return ["OWNER", "ADMIN"].includes(role);
+      return role === "OWNER";
     };
 
     assert.equal(canManageUsers("OWNER"), true);
-    assert.equal(canManageUsers("ADMIN"), true);
+    assert.equal(canManageUsers("ADMIN"), false);
     assert.equal(canManageUsers("STAFF"), false);
     assert.equal(canManageUsers("CASHIER"), false);
     assert.equal(canManageUsers(null), false);
@@ -26,12 +26,12 @@ describe("Frontend User Management Architecture & Invariant Tests", () => {
       }
 
       const cleanRole = formData.role?.trim().toUpperCase();
-      if (!["OWNER", "STAFF", "CASHIER", "ADMIN"].includes(cleanRole)) {
+      if (!["OWNER", "STAFF", "CASHIER"].includes(cleanRole)) {
         throw new Error(`Invalid role: ${formData.role}`);
       }
 
       return {
-        role: cleanRole === "ADMIN" ? "OWNER" : cleanRole,
+        role: cleanRole,
         first_name: formData.first_name.trim(),
         last_name: formData.last_name.trim(),
         email: formData.email.trim().toLowerCase(),
@@ -60,9 +60,11 @@ describe("Frontend User Management Architecture & Invariant Tests", () => {
       /Password must be at least 8 characters/
     );
 
-    // ADMIN maps to OWNER
-    const adminPayload = buildCreateUserPayload({ ...validData, role: "ADMIN" });
-    assert.equal(adminPayload.role, "OWNER");
+    // ADMIN is rejected as invalid role
+    assert.throws(
+      () => buildCreateUserPayload({ ...validData, role: "ADMIN" }),
+      /Invalid role: ADMIN/
+    );
   });
 
   test("User query parameters builder formats role filter, active status, and search terms", () => {

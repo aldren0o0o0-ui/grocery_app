@@ -4,15 +4,28 @@ from app.extensions import db
 from app.modules.auth.models import Role
 
 DEFAULT_ROLES = [
-    {"name": "OWNER", "description": "Business owner with full access"},
-    {"name": "ADMIN", "description": "Administrator with management privileges"},
-    {"name": "CASHIER", "description": "Cashier handling sales transactions"},
+    {"name": "OWNER", "description": "Business owner with full management access"},
     {"name": "STAFF", "description": "General store staff for inventory and operations"},
+    {"name": "CASHIER", "description": "Cashier handling sales transactions"},
 ]
 
 
 def seed_roles_data() -> list[str]:
-    """Idempotently seed the standard roles."""
+    """Idempotently seed the standard roles and normalize legacy roles."""
+    from app.modules.users.models import User
+
+    # Normalize legacy ADMIN role if present
+    admin_role = db.session.execute(db.select(Role).filter_by(name="ADMIN")).scalar_one_or_none()
+    if admin_role:
+        owner_role = db.session.execute(db.select(Role).filter_by(name="OWNER")).scalar_one_or_none()
+        if not owner_role:
+            owner_role = Role(name="OWNER", description="Business owner with full management access")
+            db.session.add(owner_role)
+            db.session.flush()
+        db.session.query(User).filter_by(role_id=admin_role.id).update({"role_id": owner_role.id})
+        db.session.delete(admin_role)
+        db.session.commit()
+
     seeded = []
     for role_data in DEFAULT_ROLES:
         existing = db.session.execute(
@@ -59,7 +72,7 @@ def register_commands(app: Flask) -> None:
             click.echo(f"Error creating owner: {e.message}", err=True)
 
     @app.cli.command("create-user")
-    @click.option("--role", prompt="Role (OWNER, STAFF, CASHIER)", type=click.Choice(["OWNER", "STAFF", "CASHIER", "ADMIN"], case_sensitive=False), help="Role for the user")
+    @click.option("--role", prompt="Role (OWNER, STAFF, CASHIER)", type=click.Choice(["OWNER", "STAFF", "CASHIER"], case_sensitive=False), help="Role for the user")
     @click.option("--email", prompt="User Email", help="Email for the user")
     @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Password for the user")
     @click.option("--first-name", prompt="First Name", default="First", help="First name")
@@ -70,8 +83,6 @@ def register_commands(app: Flask) -> None:
         from app.common.errors import AppError
 
         normalized_role = role.strip().upper()
-        if normalized_role == "ADMIN":
-            normalized_role = "OWNER"
 
         try:
             user = UserService.create_user(

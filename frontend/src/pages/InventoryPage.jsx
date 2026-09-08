@@ -10,7 +10,7 @@ import { getCategoriesApi } from "../modules/categories/api";
 
 export const InventoryPage = () => {
   const { user } = useAuth();
-  const canAdjust = ["OWNER", "ADMIN"].includes(user?.role);
+  const canAdjust = user?.role === "OWNER";
 
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);

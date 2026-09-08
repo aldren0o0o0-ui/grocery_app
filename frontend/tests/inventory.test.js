@@ -2,14 +2,14 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 describe("Frontend Inventory Architecture & Calculation Tests", () => {
-  test("Inventory adjustment authorization permits OWNER and ADMIN, rejects CASHIER and STAFF", () => {
+  test("Inventory adjustment authorization permits OWNER, rejects CASHIER, STAFF, and ADMIN", () => {
     const canAdjustInventory = (role) => {
       if (!role) return false;
-      return ["OWNER", "ADMIN"].includes(role);
+      return role === "OWNER";
     };
 
     assert.equal(canAdjustInventory("OWNER"), true);
-    assert.equal(canAdjustInventory("ADMIN"), true);
+    assert.equal(canAdjustInventory("ADMIN"), false);
     assert.equal(canAdjustInventory("CASHIER"), false);
     assert.equal(canAdjustInventory("STAFF"), false);
     assert.equal(canAdjustInventory(null), false);

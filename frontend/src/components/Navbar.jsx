@@ -71,7 +71,7 @@ export const Navbar = () => {
           >
             Categories
           </Link>
-          {["OWNER", "ADMIN", "STAFF"].includes(user?.role) && (
+          {["OWNER", "STAFF"].includes(user?.role) && (
             <Link
               to="/suppliers"
               style={{
@@ -86,7 +86,52 @@ export const Navbar = () => {
               Suppliers
             </Link>
           )}
-          {["OWNER", "ADMIN"].includes(user?.role) && (
+          {["OWNER", "CASHIER"].includes(user?.role) && (
+            <Link
+              to="/pos"
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: "600",
+                color: isCurrent("/pos") ? "#16a34a" : "#4b5563",
+                textDecoration: "none",
+                borderBottom: isCurrent("/pos") ? "2px solid #16a34a" : "2px solid transparent",
+                paddingBottom: "0.25rem",
+              }}
+            >
+              POS
+            </Link>
+          )}
+          {["OWNER", "CASHIER"].includes(user?.role) && (
+            <Link
+              to="/sales"
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: "600",
+                color: isCurrent("/sales") ? "#2563eb" : "#4b5563",
+                textDecoration: "none",
+                borderBottom: isCurrent("/sales") ? "2px solid #2563eb" : "2px solid transparent",
+                paddingBottom: "0.25rem",
+              }}
+            >
+              Sales
+            </Link>
+          )}
+          {["OWNER", "STAFF"].includes(user?.role) && (
+            <Link
+              to="/purchases"
+              style={{
+                fontSize: "0.875rem",
+                fontWeight: "600",
+                color: isCurrent("/purchases") ? "#2563eb" : "#4b5563",
+                textDecoration: "none",
+                borderBottom: isCurrent("/purchases") ? "2px solid #2563eb" : "2px solid transparent",
+                paddingBottom: "0.25rem",
+              }}
+            >
+              Purchases
+            </Link>
+          )}
+          {user?.role === "OWNER" && (
             <Link
               to="/users"
               style={{

@@ -14,7 +14,7 @@ from app.modules.users.models import User
 @pytest.fixture(autouse=True)
 def setup_roles(app):
     with app.app_context():
-        for role_name in ["OWNER", "ADMIN", "CASHIER", "STAFF"]:
+        for role_name in ["OWNER", "CASHIER", "STAFF"]:
             existing = db.session.execute(select(Role).filter_by(name=role_name)).scalar_one_or_none()
             if not existing:
                 db.session.add(Role(name=role_name, description=f"{role_name} role"))
@@ -47,7 +47,7 @@ def create_test_user(email, password, role_name="STAFF", is_active=True):
 
 
 def test_successful_login_for_all_roles(client):
-    roles = ["OWNER", "ADMIN", "CASHIER", "STAFF"]
+    roles = ["OWNER", "CASHIER", "STAFF"]
     for role_name in roles:
         email = f"{role_name.lower()}@test.com"
         create_test_user(email, "Password123", role_name=role_name)
@@ -234,12 +234,11 @@ def test_rbac_decorators(app):
 
     with app.app_context():
         owner = create_test_user("rbac_owner@test.com", "Password123", role_name="OWNER")
-        admin = create_test_user("rbac_admin@test.com", "Password123", role_name="ADMIN")
         cashier = create_test_user("rbac_cashier@test.com", "Password123", role_name="CASHIER")
         staff = create_test_user("rbac_staff@test.com", "Password123", role_name="STAFF")
 
         with app.test_request_context():
-            @require_roles("OWNER", "ADMIN")
+            @require_roles("OWNER")
             def protected_view():
                 return "SUCCESS", 200
 
@@ -255,19 +254,13 @@ def test_rbac_decorators(app):
             assert code == 200
             assert res == "SUCCESS"
 
-            # 3. ADMIN -> 200
-            g.current_user = admin
-            res, code = protected_view()
-            assert code == 200
-            assert res == "SUCCESS"
-
-            # 4. CASHIER -> 403
+            # 3. CASHIER -> 403
             g.current_user = cashier
             res, code = protected_view()
             assert code == 403
             assert res.get_json()["error"]["code"] == "FORBIDDEN"
 
-            # 5. STAFF -> 403
+            # 4. STAFF -> 403
             g.current_user = staff
             res, code = protected_view()
             assert code == 403

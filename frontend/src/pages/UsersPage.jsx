@@ -136,7 +136,6 @@ const UsersPage = () => {
   const getRoleBadgeStyle = (role) => {
     switch (role) {
       case "OWNER":
-      case "ADMIN":
         return { backgroundColor: "#e0e7ff", color: "#3730a3", border: "1px solid #c7d2fe" };
       case "STAFF":
         return { backgroundColor: "#dbeafe", color: "#1e40af", border: "1px solid #bfdbfe" };
@@ -377,7 +376,7 @@ const UsersPage = () => {
                               ...getRoleBadgeStyle(u.role),
                             }}
                           >
-                            {u.role === "ADMIN" ? "OWNER" : u.role}
+                            {u.role}
                           </span>
                         </td>
                         <td style={{ padding: "0.85rem 1.25rem" }}>

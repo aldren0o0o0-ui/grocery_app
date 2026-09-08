@@ -10,7 +10,7 @@ import {
 
 export const SuppliersPage = () => {
   const { user } = useAuth();
-  const canManage = ["OWNER", "ADMIN"].includes(user?.role);
+  const canManage = user?.role === "OWNER";
 
   const [suppliers, setSuppliers] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, per_page: 20, total: 0, pages: 1 });

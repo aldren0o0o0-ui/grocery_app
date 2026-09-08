@@ -12,7 +12,7 @@ from app.modules.users.models import User
 @pytest.fixture(autouse=True)
 def setup_roles(app):
     with app.app_context():
-        for role_name in ["OWNER", "ADMIN", "CASHIER", "STAFF"]:
+        for role_name in ["OWNER", "CASHIER", "STAFF"]:
             existing = db.session.execute(select(Role).filter_by(name=role_name)).scalar_one_or_none()
             if not existing:
                 db.session.add(Role(name=role_name, description=f"{role_name} role"))

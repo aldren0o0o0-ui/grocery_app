@@ -79,8 +79,6 @@ class UserService:
         UserService.validate_password_policy(password)
 
         clean_role_name = role_name.strip().upper()
-        if clean_role_name == "ADMIN":
-            clean_role_name = "OWNER"
 
         role = db.session.execute(
             select(Role).filter_by(name=clean_role_name)

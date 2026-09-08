@@ -54,12 +54,7 @@ class UserRepository:
 
         if role_name:
             clean_role = role_name.strip().upper()
-            if clean_role == "ADMIN":
-                clean_role = "OWNER"
-            if clean_role == "OWNER":
-                stmt = stmt.filter(Role.name.in_(["OWNER", "ADMIN"]))
-            else:
-                stmt = stmt.filter(Role.name == clean_role)
+            stmt = stmt.filter(Role.name == clean_role)
 
         if is_active is not None:
             stmt = stmt.filter(User.is_active == is_active)

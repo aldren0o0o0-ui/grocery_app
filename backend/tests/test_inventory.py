@@ -35,13 +35,23 @@ def get_inventory_token_for_role(client, role_name):
 
 @pytest.fixture(autouse=True)
 def cleanup_inventory_data(app):
+    def clean():
+        with app.app_context():
+            from app.modules.purchasing.models import PurchaseItem, Purchase
+            from app.modules.sales.models import Sale, SaleItem, Payment
+            AuditLog.query.filter(AuditLog.entity_type.in_(["Product", "Category", "StockMovement", "Purchase", "Sale"])).delete()
+            Payment.query.delete()
+            SaleItem.query.delete()
+            Sale.query.delete()
+            PurchaseItem.query.delete()
+            Purchase.query.delete()
+            StockMovement.query.delete()
+            Product.query.delete()
+            Category.query.delete()
+            db.session.commit()
+    clean()
     yield
-    with app.app_context():
-        AuditLog.query.filter(AuditLog.entity_type.in_(["Product", "Category", "StockMovement"])).delete()
-        StockMovement.query.delete()
-        Product.query.delete()
-        Category.query.delete()
-        db.session.commit()
+    clean()
 
 
 def setup_sample_inventory(client):
@@ -186,7 +196,7 @@ def test_inventory_search_and_filters(client):
 
 def test_inventory_stock_status_filter_and_reorder_zero(client):
     data = setup_sample_inventory(client)
-    token = get_inventory_token_for_role(client, "ADMIN")
+    token = get_inventory_token_for_role(client, "OWNER")
 
     # 1. OUT_OF_STOCK filter
     res_oos = client.get(
@@ -276,10 +286,9 @@ def test_low_stock_endpoint(client):
 # 2. Stock Adjustment & RBAC Tests
 # ==============================================================================
 
-def test_manual_adjustment_in_succeeds_for_owner_and_admin(client):
+def test_manual_adjustment_in_succeeds_for_owner(client):
     data = setup_sample_inventory(client)
     owner_token = get_inventory_token_for_role(client, "OWNER")
-    admin_token = get_inventory_token_for_role(client, "ADMIN")
 
     p = data["p1"]  # Initial stock: 25.000
 
@@ -302,10 +311,10 @@ def test_manual_adjustment_in_succeeds_for_owner_and_admin(client):
     assert mov1["quantity_before"] == "25.000"
     assert mov1["quantity_after"] == "35.000"
 
-    # ADMIN adds 5.250 units
+    # OWNER adds 5.250 units
     res2 = client.post(
         "/api/inventory/adjustments",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {owner_token}"},
         json={
             "product_id": p.id,
             "direction": "IN",
@@ -329,7 +338,6 @@ def test_manual_adjustment_in_succeeds_for_owner_and_admin(client):
 def test_manual_adjustment_out_succeeds_and_maps_reasons(client):
     data = setup_sample_inventory(client)
     owner_token = get_inventory_token_for_role(client, "OWNER")
-    admin_token = get_inventory_token_for_role(client, "ADMIN")
 
     p = data["p1"]  # Initial stock: 25.000
 
@@ -354,7 +362,7 @@ def test_manual_adjustment_out_succeeds_and_maps_reasons(client):
     # 2. Deduct with reason EXPIRED -> movement_type EXPIRED
     res_exp = client.post(
         "/api/inventory/adjustments",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {owner_token}"},
         json={
             "product_id": p.id,
             "direction": "OUT",

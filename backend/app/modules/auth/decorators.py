@@ -46,14 +46,7 @@ def require_roles(*roles: str) -> Callable:
                 return api_error("UNAUTHORIZED", "Authentication required.", 401)
 
             user_role = current_user.role.name if current_user.role else None
-            # OWNER and ADMIN are merged management roles with equivalent permissions
-            effective_roles = set(roles)
-            if "OWNER" in effective_roles:
-                effective_roles.add("ADMIN")
-            if "ADMIN" in effective_roles:
-                effective_roles.add("OWNER")
-
-            if user_role not in effective_roles:
+            if user_role not in roles:
                 return api_error("FORBIDDEN", "You do not have permission to access this resource.", 403)
 
             return fn(*args, **kwargs)

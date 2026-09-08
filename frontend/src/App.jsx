@@ -11,6 +11,10 @@ import ProductsPage from "./pages/ProductsPage";
 import InventoryPage from "./pages/InventoryPage";
 import SuppliersPage from "./pages/SuppliersPage";
 import UsersPage from "./pages/UsersPage";
+import PurchasesPage from "./pages/PurchasesPage";
+import PurchaseDetailPage from "./pages/PurchaseDetailPage";
+import POSPage from "./pages/POSPage";
+import SalesHistoryPage from "./pages/SalesHistoryPage";
 
 const HomePage = () => {
   const { user, logout } = useAuth();
@@ -121,7 +125,52 @@ const HomePage = () => {
           >
             Manage Categories
           </Link>
-          {["OWNER", "ADMIN"].includes(user?.role) && (
+          {["OWNER", "CASHIER"].includes(user?.role) && (
+            <Link
+              to="/pos"
+              style={{
+                padding: "0.6rem 1.25rem",
+                backgroundColor: "#16a34a",
+                color: "#ffffff",
+                borderRadius: "6px",
+                fontWeight: "600",
+                textDecoration: "none",
+              }}
+            >
+              Open POS &rarr;
+            </Link>
+          )}
+          {["OWNER", "CASHIER"].includes(user?.role) && (
+            <Link
+              to="/sales"
+              style={{
+                padding: "0.6rem 1.25rem",
+                backgroundColor: "#0284c7",
+                color: "#ffffff",
+                borderRadius: "6px",
+                fontWeight: "600",
+                textDecoration: "none",
+              }}
+            >
+              Sales History
+            </Link>
+          )}
+          {["OWNER", "STAFF"].includes(user?.role) && (
+            <Link
+              to="/purchases"
+              style={{
+                padding: "0.6rem 1.25rem",
+                backgroundColor: "#0d9488",
+                color: "#ffffff",
+                borderRadius: "6px",
+                fontWeight: "600",
+                textDecoration: "none",
+              }}
+            >
+              Purchases & Stock In &rarr;
+            </Link>
+          )}
+          {user?.role === "OWNER" && (
             <Link
               to="/users"
               style={{
@@ -202,8 +251,48 @@ function App() {
             path="/suppliers"
             element={
               <ProtectedRoute>
-                <RoleRoute allowedRoles={["OWNER", "ADMIN", "STAFF"]}>
+                <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
                   <SuppliersPage />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/purchases"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
+                  <PurchasesPage />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/purchases/:id"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
+                  <PurchaseDetailPage />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pos"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "CASHIER"]}>
+                  <POSPage />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sales"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "CASHIER"]}>
+                  <SalesHistoryPage />
                 </RoleRoute>
               </ProtectedRoute>
             }
@@ -212,7 +301,7 @@ function App() {
             path="/users"
             element={
               <ProtectedRoute>
-                <RoleRoute allowedRoles={["OWNER", "ADMIN"]}>
+                <RoleRoute allowedRoles={["OWNER"]}>
                   <UsersPage />
                 </RoleRoute>
               </ProtectedRoute>
@@ -224,7 +313,7 @@ function App() {
             path="/admin-preview"
             element={
               <ProtectedRoute>
-                <RoleRoute allowedRoles={["OWNER", "ADMIN"]}>
+                <RoleRoute allowedRoles={["OWNER"]}>
                   <AdminPreviewPage />
                 </RoleRoute>
               </ProtectedRoute>

@@ -112,6 +112,7 @@ class InventoryService:
         reference_id: Optional[int] = None,
         remarks: Optional[str] = None,
         audit_action: Optional[str] = None,
+        commit: bool = True,
     ) -> StockMovement:
         """Atomically increments product stock with PostgreSQL row-level lock.
 
@@ -162,11 +163,13 @@ class InventoryService:
             )
             db.session.add(audit)
 
-            db.session.commit()
+            if commit:
+                db.session.commit()
             return movement
 
         except Exception:
-            db.session.rollback()
+            if commit:
+                db.session.rollback()
             raise
 
     @classmethod
@@ -180,6 +183,7 @@ class InventoryService:
         reference_id: Optional[int] = None,
         remarks: Optional[str] = None,
         audit_action: Optional[str] = None,
+        commit: bool = True,
     ) -> StockMovement:
         """Atomically decrements product stock with PostgreSQL row-level lock.
 
@@ -238,11 +242,13 @@ class InventoryService:
             )
             db.session.add(audit)
 
-            db.session.commit()
+            if commit:
+                db.session.commit()
             return movement
 
         except Exception:
-            db.session.rollback()
+            if commit:
+                db.session.rollback()
             raise
 
     @classmethod

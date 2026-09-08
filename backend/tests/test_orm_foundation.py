@@ -19,10 +19,10 @@ from app.modules.audit.models import AuditLog
 def test_role_and_user_creation(db_session):
     # Verify role exists (from seeds or new)
     role = db_session.execute(
-        select(Role).filter_by(name="ADMIN")
+        select(Role).filter_by(name="OWNER")
     ).scalar_one_or_none()
     if not role:
-        role = Role(name="ADMIN", description="Administrator")
+        role = Role(name="OWNER", description="Business Owner")
         db_session.add(role)
         db_session.flush()
 
@@ -39,7 +39,7 @@ def test_role_and_user_creation(db_session):
 
     assert user.id is not None
     assert user.email == "juan.delacruz@example.com"
-    assert user.role.name == "ADMIN"
+    assert user.role.name == "OWNER"
     assert user in role.users
 
 
@@ -235,10 +235,10 @@ def test_sales_and_payments(db_session):
 
 
 def test_expenses_and_audit_logs(db_session):
-    role = db_session.execute(select(Role).filter_by(name="ADMIN")).scalar_one()
+    role = db_session.execute(select(Role).filter_by(name="OWNER")).scalar_one()
     user = User(
         role_id=role.id,
-        first_name="Admin",
+        first_name="Owner",
         last_name="User",
         email="admin.expenses@example.com",
         password_hash="pw",

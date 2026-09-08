@@ -33,12 +33,24 @@ def get_token_for_role(client, role_name):
 
 @pytest.fixture(autouse=True)
 def cleanup_catalog_data(app):
+    def clean():
+        with app.app_context():
+            from app.modules.purchasing.models import PurchaseItem, Purchase
+            from app.modules.sales.models import Sale, SaleItem, Payment
+            from app.modules.inventory.models import StockMovement
+            AuditLog.query.filter(AuditLog.entity_type.in_(["Product", "Category", "Purchase", "StockMovement", "Sale"])).delete()
+            Payment.query.delete()
+            SaleItem.query.delete()
+            Sale.query.delete()
+            PurchaseItem.query.delete()
+            Purchase.query.delete()
+            StockMovement.query.delete()
+            Product.query.delete()
+            Category.query.delete()
+            db.session.commit()
+    clean()
     yield
-    with app.app_context():
-        AuditLog.query.filter(AuditLog.entity_type.in_(["Product", "Category"])).delete()
-        Product.query.delete()
-        Category.query.delete()
-        db.session.commit()
+    clean()
 
 
 # ==============================================================================
@@ -47,7 +59,6 @@ def cleanup_catalog_data(app):
 
 def test_category_crud_and_rbac(client):
     owner_token = get_token_for_role(client, "OWNER")
-    admin_token = get_token_for_role(client, "ADMIN")
     cashier_token = get_token_for_role(client, "CASHIER")
     staff_token = get_token_for_role(client, "STAFF")
 
@@ -77,15 +88,7 @@ def test_category_crud_and_rbac(client):
     assert res_owner.get_json()["category"]["name"] == "Fresh Produce"
     assert res_owner.get_json()["category"]["is_active"] is True
 
-    # 3. ADMIN creates category (201)
-    res_admin = client.post(
-        "/api/categories",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={"name": "Canned Goods"},
-    )
-    assert res_admin.status_code == 201
-
-    # 4. Duplicate category rejection (case-insensitive collision e.g. "fresh produce")
+    # 3. Duplicate category rejection (case-insensitive collision e.g. "fresh produce")
     res_dup = client.post(
         "/api/categories",
         headers={"Authorization": f"Bearer {owner_token}"},
@@ -122,7 +125,7 @@ def test_category_crud_and_rbac(client):
     # 8. Update category (200)
     res_update = client.patch(
         f"/api/categories/{cat_id}",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {owner_token}"},
         json={"name": "Organic Fresh Produce", "description": "Farm-to-table organic goods"},
     )
     assert res_update.status_code == 200
@@ -156,7 +159,6 @@ def test_category_crud_and_rbac(client):
 
 def test_product_crud_and_validations(client):
     owner_token = get_token_for_role(client, "OWNER")
-    admin_token = get_token_for_role(client, "ADMIN")
     cashier_token = get_token_for_role(client, "CASHIER")
     staff_token = get_token_for_role(client, "STAFF")
 
@@ -261,7 +263,7 @@ def test_product_crud_and_validations(client):
     # 6. SKU duplicate rejection & case collision (409)
     res_dup_sku = client.post(
         "/api/products",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {owner_token}"},
         json={
             "category_id": cat_active_id,
             "name": "Duplicate Apple Juice",
@@ -345,7 +347,7 @@ def test_product_crud_and_validations(client):
     # 11. Partial product update (200) & price audit
     res_update_price = client.patch(
         f"/api/products/{prod_id}",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {owner_token}"},
         json={"selling_price": "70.00", "reorder_level": "25.000"},
     )
     assert res_update_price.status_code == 200
@@ -356,7 +358,7 @@ def test_product_crud_and_validations(client):
     # 12. Reject stock_quantity in update payload (400)
     res_update_stock = client.patch(
         f"/api/products/{prod_id}",
-        headers={"Authorization": f"Bearer {admin_token}"},
+        headers={"Authorization": f"Bearer {owner_token}"},
         json={"stock_quantity": "100.000"},
     )
     assert res_update_stock.status_code == 400
