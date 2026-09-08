@@ -1,0 +1,164 @@
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { AuthProvider } from "./modules/auth/AuthContext";
+import useAuth from "./modules/auth/useAuth";
+import ProtectedRoute from "./modules/auth/ProtectedRoute";
+import RoleRoute from "./modules/auth/RoleRoute";
+
+import LoginPage from "./pages/LoginPage";
+import UnauthorizedPage from "./pages/UnauthorizedPage";
+
+const HomePage = () => {
+  const { user, logout } = useAuth();
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#f9fafb",
+        padding: "2rem",
+        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      }}
+    >
+      <header
+        style={{
+          maxWidth: "800px",
+          margin: "0 auto 2rem",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          paddingBottom: "1rem",
+          borderBottom: "1px solid #e5e7eb",
+        }}
+      >
+        <h1 style={{ margin: 0, fontSize: "1.5rem", color: "#111827" }}>Grocery SME System</h1>
+        <button
+          onClick={logout}
+          style={{
+            padding: "0.5rem 1rem",
+            backgroundColor: "#ef4444",
+            color: "#ffffff",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+            fontWeight: "600",
+          }}
+        >
+          Sign Out
+        </button>
+      </header>
+
+      <main
+        style={{
+          maxWidth: "800px",
+          margin: "0 auto",
+          backgroundColor: "#ffffff",
+          borderRadius: "8px",
+          padding: "2rem",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+        }}
+      >
+        <h2 style={{ fontSize: "1.25rem", color: "#1f2937", marginTop: 0 }}>
+          Welcome, {user?.first_name} {user?.last_name}!
+        </h2>
+        <div style={{ marginTop: "1rem", lineHeight: "1.8", color: "#374151" }}>
+          <p>
+            <strong>Email:</strong> {user?.email}
+          </p>
+          <p>
+            <strong>Role:</strong>{" "}
+            <span
+              style={{
+                display: "inline-block",
+                padding: "0.2rem 0.6rem",
+                borderRadius: "9999px",
+                backgroundColor: "#e0e7ff",
+                color: "#3730a3",
+                fontWeight: "600",
+                fontSize: "0.875rem",
+              }}
+            >
+              {user?.role}
+            </span>
+          </p>
+          <p>
+            <strong>Account Status:</strong>{" "}
+            <span style={{ color: user?.is_active ? "#16a34a" : "#dc2626", fontWeight: "600" }}>
+              {user?.is_active ? "Active" : "Inactive"}
+            </span>
+          </p>
+        </div>
+
+        <div style={{ marginTop: "2rem", paddingTop: "1.5rem", borderTop: "1px solid #f3f4f6" }}>
+          <h3 style={{ fontSize: "1rem", color: "#4b5563" }}>Wave 2 RBAC Navigation Test</h3>
+          <p style={{ fontSize: "0.875rem", color: "#6b7280" }}>
+            The link below requires OWNER or ADMIN role. CASHIER or STAFF users clicking it will be safely redirected to the Unauthorized page.
+          </p>
+          <Link
+            to="/admin-preview"
+            style={{
+              display: "inline-block",
+              marginTop: "0.5rem",
+              color: "#2563eb",
+              fontWeight: "600",
+              textDecoration: "underline",
+            }}
+          >
+            Visit Admin-Only Management Preview &rarr;
+          </Link>
+        </div>
+      </main>
+    </div>
+  );
+};
+
+const AdminPreviewPage = () => {
+  const { user } = useAuth();
+  return (
+    <div style={{ padding: "2rem", fontFamily: "system-ui, sans-serif", maxWidth: "800px", margin: "0 auto" }}>
+      <h2>Admin-Only Management Preview</h2>
+      <p>
+        Verified access granted to <strong>{user?.email}</strong> (Role: <strong>{user?.role}</strong>).
+      </p>
+      <Link to="/" style={{ color: "#2563eb", textDecoration: "underline" }}>
+        &larr; Back to Home
+      </Link>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+
+          {/* Standard Authenticated Route */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Role-Protected Route Example */}
+          <Route
+            path="/admin-preview"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "ADMIN"]}>
+                  <AdminPreviewPage />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+export default App;
