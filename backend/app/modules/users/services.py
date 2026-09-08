@@ -60,45 +60,108 @@ class UserService:
         db.session.commit()
 
     @staticmethod
-    def create_owner(first_name: str, last_name: str, email: str, password: str) -> User:
-        """Provisions an initial OWNER account safely."""
+    def create_user(
+        role_name: str,
+        first_name: str,
+        last_name: str,
+        email: str,
+        password: str,
+        actor: Optional[User] = None,
+    ) -> User:
+        """Provisions a user account safely with the specified role."""
         normalized_email = email.strip().lower()
         if not normalized_email:
             raise AppError("INVALID_INPUT", "Email is required.", 400)
 
         if UserRepository.exists_by_email(normalized_email):
-            raise AppError("EMAIL_ALREADY_EXISTS", f"User with email '{normalized_email}' already exists.", 400)
+            raise AppError("EMAIL_ALREADY_EXISTS", f"User with email '{normalized_email}' already exists.", 409)
 
         UserService.validate_password_policy(password)
 
-        owner_role = db.session.execute(
-            select(Role).filter_by(name="OWNER")
+        clean_role_name = role_name.strip().upper()
+        if clean_role_name == "ADMIN":
+            clean_role_name = "OWNER"
+
+        role = db.session.execute(
+            select(Role).filter_by(name=clean_role_name)
         ).scalar_one_or_none()
 
-        if not owner_role:
-            raise AppError("ROLE_NOT_FOUND", "OWNER role does not exist. Please run 'flask seed-roles' first.", 500)
+        if not role:
+            raise AppError("ROLE_NOT_FOUND", f"Role '{clean_role_name}' does not exist. Please run 'flask seed-roles' first.", 400)
 
         hashed_password = generate_password_hash(password)
 
-        owner_user = User(
-            role_id=owner_role.id,
+        new_user = User(
+            role_id=role.id,
             first_name=first_name.strip(),
             last_name=last_name.strip(),
             email=normalized_email,
             password_hash=hashed_password,
             is_active=True,
         )
-        UserRepository.create(owner_user)
+        UserRepository.create(new_user)
         db.session.flush()
 
+        audit_user_id = actor.id if actor else new_user.id
+        description = (
+            f"User '{normalized_email}' ({clean_role_name}) created by {actor.email}"
+            if actor
+            else f"User '{normalized_email}' ({clean_role_name}) provisioned via CLI"
+        )
+
         audit = AuditLog(
-            user_id=owner_user.id,
-            action="CREATE_OWNER",
+            user_id=audit_user_id,
+            action=f"CREATE_{clean_role_name}",
             entity_type="User",
-            entity_id=owner_user.id,
-            description=f"Initial owner '{normalized_email}' provisioned via CLI",
+            entity_id=new_user.id,
+            description=description,
         )
         db.session.add(audit)
         db.session.commit()
 
-        return owner_user
+        return new_user
+
+    @staticmethod
+    def create_owner(first_name: str, last_name: str, email: str, password: str) -> User:
+        """Provisions an initial OWNER account safely."""
+        return UserService.create_user("OWNER", first_name, last_name, email, password)
+
+    @staticmethod
+    def set_user_status(user_id: int, is_active: bool, actor: User) -> User:
+        """Activates or deactivates a user account, preventing self-deactivation."""
+        target_user = UserRepository.get_by_id(user_id)
+        if not target_user:
+            raise AppError("USER_NOT_FOUND", "User does not exist.", 404)
+
+        if target_user.id == actor.id and not is_active:
+            raise AppError("CANNOT_DEACTIVATE_SELF", "You cannot deactivate your own account.", 400)
+
+        UserRepository.update_status(target_user, is_active)
+
+        action = "USER_ACTIVATED" if is_active else "USER_DEACTIVATED"
+        status_text = "Active" if is_active else "Inactive"
+        audit = AuditLog(
+            user_id=actor.id,
+            action=action,
+            entity_type="User",
+            entity_id=target_user.id,
+            description=f"User '{target_user.email}' status changed to {status_text} by {actor.email}",
+        )
+        db.session.add(audit)
+        db.session.commit()
+
+        return target_user
+
+    @staticmethod
+    def list_users(
+        role_name: Optional[str] = None,
+        is_active: Optional[bool] = None,
+        search: Optional[str] = None,
+    ) -> list[User]:
+        """Lists team users filtered by role, active status, or search query."""
+        return UserRepository.list_users(
+            role_name=role_name,
+            is_active=is_active,
+            search=search,
+        )
+

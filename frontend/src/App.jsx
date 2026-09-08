@@ -10,6 +10,7 @@ import CategoriesPage from "./pages/CategoriesPage";
 import ProductsPage from "./pages/ProductsPage";
 import InventoryPage from "./pages/InventoryPage";
 import SuppliersPage from "./pages/SuppliersPage";
+import UsersPage from "./pages/UsersPage";
 
 const HomePage = () => {
   const { user, logout } = useAuth();
@@ -120,6 +121,21 @@ const HomePage = () => {
           >
             Manage Categories
           </Link>
+          {["OWNER", "ADMIN"].includes(user?.role) && (
+            <Link
+              to="/users"
+              style={{
+                padding: "0.6rem 1.25rem",
+                backgroundColor: "#4f46e5",
+                color: "#ffffff",
+                borderRadius: "6px",
+                fontWeight: "600",
+                textDecoration: "none",
+              }}
+            >
+              Manage Team & Users
+            </Link>
+          )}
         </div>
       </main>
     </div>
@@ -188,6 +204,16 @@ function App() {
               <ProtectedRoute>
                 <RoleRoute allowedRoles={["OWNER", "ADMIN", "STAFF"]}>
                   <SuppliersPage />
+                </RoleRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute>
+                <RoleRoute allowedRoles={["OWNER", "ADMIN"]}>
+                  <UsersPage />
                 </RoleRoute>
               </ProtectedRoute>
             }

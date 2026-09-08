@@ -17,7 +17,15 @@ export const RoleRoute = ({ allowedRoles = [], children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (!allowedRoles.includes(user?.role)) {
+  const effectiveRoles = [...allowedRoles];
+  if (effectiveRoles.includes("OWNER") && !effectiveRoles.includes("ADMIN")) {
+    effectiveRoles.push("ADMIN");
+  }
+  if (effectiveRoles.includes("ADMIN") && !effectiveRoles.includes("OWNER")) {
+    effectiveRoles.push("OWNER");
+  }
+
+  if (!effectiveRoles.includes(user?.role)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

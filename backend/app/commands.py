@@ -58,3 +58,46 @@ def register_commands(app: Flask) -> None:
         except AppError as e:
             click.echo(f"Error creating owner: {e.message}", err=True)
 
+    @app.cli.command("create-user")
+    @click.option("--role", prompt="Role (OWNER, STAFF, CASHIER)", type=click.Choice(["OWNER", "STAFF", "CASHIER", "ADMIN"], case_sensitive=False), help="Role for the user")
+    @click.option("--email", prompt="User Email", help="Email for the user")
+    @click.option("--password", prompt=True, hide_input=True, confirmation_prompt=True, help="Password for the user")
+    @click.option("--first-name", prompt="First Name", default="First", help="First name")
+    @click.option("--last-name", prompt="Last Name", default="Last", help="Last name")
+    def create_user_command(role, email, password, first_name, last_name):
+        """Safely create a user account with any standard role (OWNER, STAFF, CASHIER)."""
+        from app.modules.users.services import UserService
+        from app.common.errors import AppError
+
+        normalized_role = role.strip().upper()
+        if normalized_role == "ADMIN":
+            normalized_role = "OWNER"
+
+        try:
+            user = UserService.create_user(
+                role_name=normalized_role,
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                password=password,
+            )
+            click.echo(f"Successfully created {user.role.name} account for '{user.email}' (ID: {user.id}).")
+        except AppError as e:
+            click.echo(f"Error creating user: {e.message}", err=True)
+
+    @app.cli.command("delete-all-users")
+    @click.confirmation_option(prompt="Are you sure you want to delete ALL users and their audit logs?")
+    def delete_all_users_command():
+        """Delete all user accounts and audit logs for clean testing."""
+        from sqlalchemy import text
+        from app.extensions import db
+
+        try:
+            db.session.execute(text("DELETE FROM audit_logs;"))
+            count = db.session.execute(text("DELETE FROM users;")).rowcount
+            db.session.commit()
+            click.echo(f"Successfully deleted all users ({count} removed) and cleared audit logs.")
+        except Exception as e:
+            db.session.rollback()
+            click.echo(f"Error deleting users: {str(e)}", err=True)
+
