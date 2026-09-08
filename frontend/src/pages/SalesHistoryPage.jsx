@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import { getSalesApi, getSaleDetailApi } from "../modules/sales/api";
+import { createReturnApi } from "../modules/returns/api";
 
 export const SalesHistoryPage = () => {
   const { user } = useAuth();
@@ -15,16 +16,27 @@ export const SalesHistoryPage = () => {
   const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [globalSuccess, setGlobalSuccess] = useState("");
 
   // Sale detail modal
   const [selectedSale, setSelectedSale] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
 
+  // Return Processing modal
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnQuantities, setReturnQuantities] = useState({});
+  const [returnRefundMethod, setReturnRefundMethod] = useState("CASH");
+  const [returnReason, setReturnReason] = useState("");
+  const [returnSubmitting, setReturnSubmitting] = useState(false);
+  const [returnModalError, setReturnModalError] = useState("");
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
   useEffect(() => {
     let ignore = false;
     const fetchSales = async () => {
       try {
+        setLoading(true);
         const params = {
           page: pagination.page,
           per_page: 20,
@@ -41,7 +53,7 @@ export const SalesHistoryPage = () => {
         }
       } catch (err) {
         if (!ignore) {
-          setError(err.response?.data?.message || "Failed to load sales history.");
+          setError(err.response?.data?.error?.message || err.response?.data?.message || "Failed to load sales history.");
         }
       } finally {
         if (!ignore) {
@@ -54,7 +66,7 @@ export const SalesHistoryPage = () => {
     return () => {
       ignore = true;
     };
-  }, [pagination.page, search, paymentMethod, dateFrom, dateTo]);
+  }, [pagination.page, search, paymentMethod, dateFrom, dateTo, refreshTrigger]);
 
   const handleOpenDetail = async (saleId) => {
     try {
@@ -63,7 +75,7 @@ export const SalesHistoryPage = () => {
       const res = await getSaleDetailApi(saleId);
       setSelectedSale(res.sale);
     } catch (err) {
-      setDetailError(err.response?.data?.message || "Failed to load sale details.");
+      setDetailError(err.response?.data?.error?.message || err.response?.data?.message || "Failed to load sale details.");
     } finally {
       setDetailLoading(false);
     }
@@ -75,6 +87,195 @@ export const SalesHistoryPage = () => {
     setDateFrom("");
     setDateTo("");
   };
+
+  // Open Return Processing Modal
+  const handleOpenReturnModal = () => {
+    if (!selectedSale) return;
+    const initialQtys = {};
+    selectedSale.items?.forEach((it) => {
+      initialQtys[it.id] = "";
+    });
+    setReturnQuantities(initialQtys);
+    setReturnRefundMethod(selectedSale.payments?.[0]?.payment_method || "CASH");
+    setReturnReason("");
+    setReturnModalError("");
+    setShowReturnModal(true);
+  };
+
+  // Calculate live preview of refund for each line and total
+  const calculateRefundPreview = () => {
+    if (!selectedSale) return { lineRefunds: {}, totalRefund: 0, hasItems: false };
+
+    const saleSubtotal = parseFloat(selectedSale.subtotal) || 0;
+    const saleDiscount = parseFloat(selectedSale.discount) || 0;
+    const saleTotal = parseFloat(selectedSale.total) || 0;
+    const totalRefunded = parseFloat(selectedSale.total_refunded) || 0;
+
+    let totalCalc = 0;
+    let hasItems = false;
+    const lineRefunds = {};
+
+    let isFullReturn = true;
+
+    selectedSale.items?.forEach((it) => {
+      const inputQty = parseFloat(returnQuantities[it.id]) || 0;
+      const soldQty = parseFloat(it.quantity) || 0;
+      const alreadyRet = parseFloat(it.returned_quantity) || 0;
+
+      if (inputQty > 0) {
+        hasItems = true;
+        const itemSubtotal = parseFloat(it.subtotal) || 0;
+        let lineRef;
+
+        if (saleDiscount > 0 && saleSubtotal > 0 && soldQty > 0) {
+          const ratio = itemSubtotal / saleSubtotal;
+          const netItemSubtotal = itemSubtotal - (saleDiscount * ratio);
+          lineRef = (inputQty / soldQty) * netItemSubtotal;
+        } else {
+          lineRef = inputQty * (parseFloat(it.unit_price) || 0);
+        }
+
+        lineRefunds[it.id] = Math.round(lineRef * 100) / 100;
+        totalCalc += lineRefunds[it.id];
+      }
+
+      if (Math.abs((alreadyRet + inputQty) - soldQty) > 0.0001) {
+        isFullReturn = false;
+      }
+    });
+
+    if (isFullReturn && hasItems) {
+      const exactRemaining = Math.max(0, saleTotal - totalRefunded);
+      totalCalc = Math.round(exactRemaining * 100) / 100;
+    } else {
+      totalCalc = Math.min(totalCalc, Math.max(0, saleTotal - totalRefunded));
+      totalCalc = Math.round(totalCalc * 100) / 100;
+    }
+
+    return { lineRefunds, totalRefund: totalCalc, hasItems };
+  };
+
+  const refundPreview = calculateRefundPreview();
+
+  const handleProcessReturn = async (e) => {
+    e.preventDefault();
+    if (!selectedSale) return;
+
+    try {
+      setReturnSubmitting(true);
+      setReturnModalError("");
+
+      if (!returnReason.trim()) {
+        setReturnModalError("Please enter a return reason.");
+        setReturnSubmitting(false);
+        return;
+      }
+
+      const itemsToReturn = [];
+      for (const it of selectedSale.items || []) {
+        const qtyVal = parseFloat(returnQuantities[it.id]) || 0;
+        if (qtyVal > 0) {
+          const returnable = parseFloat(it.returnable_quantity) || 0;
+          if (qtyVal > returnable) {
+            setReturnModalError(`Quantity for "${it.product_name}" exceeds returnable limit of ${returnable}.`);
+            setReturnSubmitting(false);
+            return;
+          }
+          itemsToReturn.push({
+            sale_item_id: it.id,
+            quantity: qtyVal.toFixed(3),
+          });
+        }
+      }
+
+      if (itemsToReturn.length === 0) {
+        setReturnModalError("Please specify a quantity greater than zero for at least one item.");
+        setReturnSubmitting(false);
+        return;
+      }
+
+      const payload = {
+        sale_id: selectedSale.id,
+        reason: returnReason.trim(),
+        refund_method: returnRefundMethod,
+        items: itemsToReturn,
+      };
+
+      const res = await createReturnApi(payload);
+      const retData = res.return;
+
+      setShowReturnModal(false);
+      setGlobalSuccess(`Return ${retData.return_number} processed successfully! ₱${parseFloat(retData.refund_amount).toFixed(2)} refunded and stock restored.`);
+
+      // Refresh sale detail and main list
+      await handleOpenDetail(selectedSale.id);
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      setReturnModalError(
+        err.response?.data?.error?.message || err.response?.data?.message || "Failed to process return."
+      );
+    } finally {
+      setReturnSubmitting(false);
+    }
+  };
+
+  const renderReturnStateBadge = (returnState) => {
+    if (returnState === "FULL") {
+      return (
+        <span
+          style={{
+            display: "inline-block",
+            padding: "0.2rem 0.5rem",
+            borderRadius: "9999px",
+            fontSize: "0.75rem",
+            fontWeight: "700",
+            backgroundColor: "#fee2e2",
+            color: "#991b1b",
+          }}
+        >
+          FULL RETURN
+        </span>
+      );
+    }
+    if (returnState === "PARTIAL") {
+      return (
+        <span
+          style={{
+            display: "inline-block",
+            padding: "0.2rem 0.5rem",
+            borderRadius: "9999px",
+            fontSize: "0.75rem",
+            fontWeight: "700",
+            backgroundColor: "#fef3c7",
+            color: "#92400e",
+          }}
+        >
+          PARTIAL RETURN
+        </span>
+      );
+    }
+    return (
+      <span
+        style={{
+          display: "inline-block",
+          padding: "0.2rem 0.5rem",
+          borderRadius: "9999px",
+          fontSize: "0.75rem",
+          fontWeight: "600",
+          backgroundColor: "#ecfdf5",
+          color: "#065f46",
+        }}
+      >
+        COMPLETED
+      </span>
+    );
+  };
+
+  const canReturnSale =
+    selectedSale &&
+    selectedSale.status === "COMPLETED" &&
+    selectedSale.return_state !== "FULL" &&
+    (isOwner || user?.id === selectedSale.cashier?.id);
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f9fafb" }}>
@@ -91,6 +292,31 @@ export const SalesHistoryPage = () => {
           </div>
         </div>
 
+        {/* Global Success Alert */}
+        {globalSuccess && (
+          <div
+            style={{
+              padding: "0.75rem 1rem",
+              backgroundColor: "#ecfdf5",
+              color: "#065f46",
+              borderRadius: "6px",
+              marginBottom: "1rem",
+              border: "1px solid #a7f3d0",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <span>{globalSuccess}</span>
+            <button
+              onClick={() => setGlobalSuccess("")}
+              style={{ background: "none", border: "none", color: "#065f46", cursor: "pointer", fontWeight: "700" }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Filter Bar */}
         <div
           style={{
@@ -103,6 +329,7 @@ export const SalesHistoryPage = () => {
             flexWrap: "wrap",
             gap: "1rem",
             alignItems: "flex-end",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
           }}
         >
           {/* Invoice Search */}
@@ -141,6 +368,7 @@ export const SalesHistoryPage = () => {
                 borderRadius: "6px",
                 fontSize: "0.875rem",
                 backgroundColor: "#ffffff",
+                boxSizing: "border-box",
               }}
             >
               <option value="ALL">All Methods</option>
@@ -150,10 +378,10 @@ export const SalesHistoryPage = () => {
             </select>
           </div>
 
-          {/* Date Range */}
-          <div style={{ width: "140px" }}>
+          {/* Date From */}
+          <div style={{ width: "150px" }}>
             <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#4b5563", marginBottom: "0.3rem" }}>
-              From Date
+              Date From
             </label>
             <input
               type="date"
@@ -161,17 +389,19 @@ export const SalesHistoryPage = () => {
               onChange={(e) => setDateFrom(e.target.value)}
               style={{
                 width: "100%",
-                padding: "0.5rem 0.5rem",
+                padding: "0.5rem 0.75rem",
                 border: "1px solid #d1d5db",
                 borderRadius: "6px",
                 fontSize: "0.875rem",
+                boxSizing: "border-box",
               }}
             />
           </div>
 
-          <div style={{ width: "140px" }}>
+          {/* Date To */}
+          <div style={{ width: "150px" }}>
             <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#4b5563", marginBottom: "0.3rem" }}>
-              To Date
+              Date To
             </label>
             <input
               type="date"
@@ -179,14 +409,16 @@ export const SalesHistoryPage = () => {
               onChange={(e) => setDateTo(e.target.value)}
               style={{
                 width: "100%",
-                padding: "0.5rem 0.5rem",
+                padding: "0.5rem 0.75rem",
                 border: "1px solid #d1d5db",
                 borderRadius: "6px",
                 fontSize: "0.875rem",
+                boxSizing: "border-box",
               }}
             />
           </div>
 
+          {/* Reset button */}
           <button
             onClick={handleResetFilters}
             style={{
@@ -230,7 +462,7 @@ export const SalesHistoryPage = () => {
                 <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Items</th>
                 <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Payment</th>
                 <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "right" }}>Total</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "center" }}>Status</th>
+                <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "center" }}>Status / Returns</th>
                 <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "center" }}>Action</th>
               </tr>
             </thead>
@@ -281,19 +513,7 @@ export const SalesHistoryPage = () => {
                       ₱{parseFloat(sale.total).toFixed(2)}
                     </td>
                     <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "0.2rem 0.5rem",
-                          borderRadius: "9999px",
-                          fontSize: "0.75rem",
-                          fontWeight: "600",
-                          backgroundColor: "#ecfdf5",
-                          color: "#065f46",
-                        }}
-                      >
-                        {sale.status}
-                      </span>
+                      {renderReturnStateBadge(sale.return_state || (sale.status === "RETURNED" ? "FULL" : "NONE"))}
                     </td>
                     <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
                       <button
@@ -371,7 +591,7 @@ export const SalesHistoryPage = () => {
       </main>
 
       {/* Sale Detail / Receipt Modal */}
-      {selectedSale && (
+      {selectedSale && !showReturnModal && (
         <div
           style={{
             position: "fixed",
@@ -391,7 +611,7 @@ export const SalesHistoryPage = () => {
               backgroundColor: "#ffffff",
               borderRadius: "8px",
               padding: "1.5rem",
-              width: "550px",
+              width: "600px",
               maxWidth: "95%",
               boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
               maxHeight: "90vh",
@@ -423,8 +643,17 @@ export const SalesHistoryPage = () => {
                 {/* Meta details */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", fontSize: "0.85rem", marginBottom: "1rem", color: "#4b5563" }}>
                   <div><strong>Date:</strong> {new Date(selectedSale.created_at).toLocaleString()}</div>
-                  <div><strong>Status:</strong> <span style={{ color: "#059669", fontWeight: "600" }}>{selectedSale.status}</span></div>
+                  <div>
+                    <strong>Status:</strong>{" "}
+                    {renderReturnStateBadge(selectedSale.return_state || (selectedSale.status === "RETURNED" ? "FULL" : "NONE"))}
+                  </div>
                   <div><strong>Cashier:</strong> {selectedSale.cashier?.name} ({selectedSale.cashier?.email})</div>
+                  {parseFloat(selectedSale.total_refunded || 0) > 0 && (
+                    <div>
+                      <strong>Total Refunded:</strong>{" "}
+                      <span style={{ color: "#dc2626", fontWeight: "700" }}>₱{parseFloat(selectedSale.total_refunded).toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Items breakdown table */}
@@ -432,7 +661,8 @@ export const SalesHistoryPage = () => {
                   <thead>
                     <tr style={{ borderBottom: "2px solid #e5e7eb", textAlign: "left", color: "#374151" }}>
                       <th style={{ padding: "0.5rem" }}>Product</th>
-                      <th style={{ padding: "0.5rem", textAlign: "center" }}>Qty</th>
+                      <th style={{ padding: "0.5rem", textAlign: "center" }}>Sold</th>
+                      <th style={{ padding: "0.5rem", textAlign: "center" }}>Returned</th>
                       <th style={{ padding: "0.5rem", textAlign: "right" }}>Price</th>
                       {isOwner && <th style={{ padding: "0.5rem", textAlign: "right", color: "#6b7280" }}>Cost</th>}
                       <th style={{ padding: "0.5rem", textAlign: "right" }}>Subtotal</th>
@@ -442,11 +672,14 @@ export const SalesHistoryPage = () => {
                     {selectedSale.items?.map((it) => (
                       <tr key={it.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
                         <td style={{ padding: "0.5rem" }}>
-                          <div>{it.product_name}</div>
+                          <div style={{ fontWeight: "600", color: "#111827" }}>{it.product_name}</div>
                           <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{it.product_sku}</div>
                         </td>
                         <td style={{ padding: "0.5rem", textAlign: "center" }}>
                           {parseFloat(it.quantity)} {it.product_unit}
+                        </td>
+                        <td style={{ padding: "0.5rem", textAlign: "center", color: parseFloat(it.returned_quantity) > 0 ? "#dc2626" : "#6b7280", fontWeight: parseFloat(it.returned_quantity) > 0 ? "600" : "normal" }}>
+                          {parseFloat(it.returned_quantity || 0)} {it.product_unit}
                         </td>
                         <td style={{ padding: "0.5rem", textAlign: "right" }}>
                           ₱{parseFloat(it.unit_price).toFixed(2)}
@@ -482,6 +715,21 @@ export const SalesHistoryPage = () => {
                   </div>
                 </div>
 
+                {/* Returns History if any */}
+                {selectedSale.returns && selectedSale.returns.length > 0 && (
+                  <div style={{ marginTop: "1rem", padding: "0.75rem", backgroundColor: "#fef2f2", borderRadius: "6px", border: "1px solid #fee2e2" }}>
+                    <div style={{ fontWeight: "700", fontSize: "0.8rem", color: "#991b1b", marginBottom: "0.3rem", textTransform: "uppercase" }}>
+                      Returns Applied to this Sale
+                    </div>
+                    {selectedSale.returns.map((r) => (
+                      <div key={r.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", color: "#7f1d1d", padding: "0.2rem 0" }}>
+                        <span><strong>{r.return_number}</strong> ({r.refund_method}) — {r.reason}</span>
+                        <span style={{ fontWeight: "700" }}>-₱{parseFloat(r.refund_amount).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {/* Payments info */}
                 {selectedSale.payments && selectedSale.payments.length > 0 && (
                   <div style={{ marginTop: "1rem", padding: "0.75rem", backgroundColor: "#f9fafb", borderRadius: "6px", fontSize: "0.85rem" }}>
@@ -494,7 +742,28 @@ export const SalesHistoryPage = () => {
                   </div>
                 )}
 
-                <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
+                <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  {canReturnSale ? (
+                    <button
+                      onClick={handleOpenReturnModal}
+                      style={{
+                        padding: "0.5rem 1rem",
+                        backgroundColor: "#dc2626",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: "6px",
+                        fontWeight: "600",
+                        cursor: "pointer",
+                        fontSize: "0.875rem",
+                      }}
+                    >
+                      Process Return
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: "0.8rem", color: "#9ca3af" }}>
+                      {selectedSale.return_state === "FULL" ? "This sale is fully returned." : ""}
+                    </span>
+                  )}
                   <button
                     onClick={() => setSelectedSale(null)}
                     style={{
@@ -504,6 +773,7 @@ export const SalesHistoryPage = () => {
                       borderRadius: "6px",
                       fontWeight: "600",
                       cursor: "pointer",
+                      fontSize: "0.875rem",
                     }}
                   >
                     Close
@@ -511,6 +781,239 @@ export const SalesHistoryPage = () => {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Return Processing Flow Modal */}
+      {showReturnModal && selectedSale && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.6)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 1050,
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              borderRadius: "8px",
+              padding: "1.5rem",
+              width: "680px",
+              maxWidth: "95%",
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#111827" }}>
+                  Process Return & Refund
+                </h2>
+                <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>
+                  Original Invoice: <strong>{selectedSale.invoice_number}</strong>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowReturnModal(false)}
+                style={{ background: "none", border: "none", fontSize: "1.25rem", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {returnModalError && (
+              <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem", fontSize: "0.875rem" }}>
+                {returnModalError}
+              </div>
+            )}
+
+            <form onSubmit={handleProcessReturn}>
+              <div style={{ marginBottom: "1rem" }}>
+                <div style={{ fontWeight: "600", fontSize: "0.875rem", marginBottom: "0.5rem", color: "#374151" }}>
+                  Specify Quantities to Return
+                </div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                  <thead>
+                    <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb", color: "#374151", textAlign: "left" }}>
+                      <th style={{ padding: "0.5rem" }}>Item</th>
+                      <th style={{ padding: "0.5rem", textAlign: "center" }}>Sold / Ret.</th>
+                      <th style={{ padding: "0.5rem", textAlign: "center" }}>Available</th>
+                      <th style={{ padding: "0.5rem", width: "110px", textAlign: "center" }}>Return Qty</th>
+                      <th style={{ padding: "0.5rem", textAlign: "right" }}>Est. Refund</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedSale.items?.map((it) => {
+                      const returnable = parseFloat(it.returnable_quantity) || 0;
+                      const isReturnable = returnable > 0;
+                      return (
+                        <tr key={it.id} style={{ borderBottom: "1px solid #f3f4f6", opacity: isReturnable ? 1 : 0.5 }}>
+                          <td style={{ padding: "0.5rem" }}>
+                            <div style={{ fontWeight: "600", color: "#111827" }}>{it.product_name}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
+                              ₱{parseFloat(it.unit_price).toFixed(2)} / {it.product_unit}
+                            </div>
+                          </td>
+                          <td style={{ padding: "0.5rem", textAlign: "center", color: "#6b7280" }}>
+                            {parseFloat(it.quantity)} / {parseFloat(it.returned_quantity || 0)}
+                          </td>
+                          <td style={{ padding: "0.5rem", textAlign: "center", fontWeight: "600", color: isReturnable ? "#059669" : "#9ca3af" }}>
+                            {returnable} {it.product_unit}
+                          </td>
+                          <td style={{ padding: "0.5rem", textAlign: "center" }}>
+                            <input
+                              type="number"
+                              min="0"
+                              max={returnable}
+                              step="any"
+                              disabled={!isReturnable || returnSubmitting}
+                              placeholder="0"
+                              value={returnQuantities[it.id] || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setReturnQuantities((prev) => ({ ...prev, [it.id]: val }));
+                              }}
+                              style={{
+                                width: "90px",
+                                padding: "0.35rem 0.5rem",
+                                borderRadius: "4px",
+                                border: "1px solid #d1d5db",
+                                fontSize: "0.85rem",
+                                textAlign: "center",
+                                boxSizing: "border-box",
+                              }}
+                            />
+                          </td>
+                          <td style={{ padding: "0.5rem", textAlign: "right", fontWeight: "600", color: "#dc2626" }}>
+                            ₱{(refundPreview.lineRefunds[it.id] || 0).toFixed(2)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Total Refund Summary & Proration Notice */}
+              <div
+                style={{
+                  backgroundColor: "#fef2f2",
+                  border: "1px solid #fee2e2",
+                  borderRadius: "6px",
+                  padding: "0.75rem 1rem",
+                  marginBottom: "1rem",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: "700", color: "#991b1b", fontSize: "0.875rem" }}>
+                    Total Estimated Refund:
+                  </div>
+                  <div style={{ fontSize: "0.75rem", color: "#7f1d1d" }}>
+                    {parseFloat(selectedSale.discount) > 0 ? "Includes prorated discount adjustments" : "Based on original sale price"}
+                  </div>
+                </div>
+                <div style={{ fontSize: "1.25rem", fontWeight: "700", color: "#dc2626" }}>
+                  ₱{refundPreview.totalRefund.toFixed(2)}
+                </div>
+              </div>
+
+              {/* Refund Method & Reason */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "1rem", marginBottom: "1.25rem" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.3rem" }}>
+                    Refund Method
+                  </label>
+                  <select
+                    value={returnRefundMethod}
+                    onChange={(e) => setReturnRefundMethod(e.target.value)}
+                    disabled={returnSubmitting}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem 0.75rem",
+                      borderRadius: "6px",
+                      border: "1px solid #d1d5db",
+                      fontSize: "0.875rem",
+                      backgroundColor: "#ffffff",
+                      boxSizing: "border-box",
+                    }}
+                  >
+                    <option value="CASH">Cash</option>
+                    <option value="GCASH">GCash</option>
+                    <option value="CARD">Card</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.3rem" }}>
+                    Return Reason <span style={{ color: "#dc2626" }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Defective item, expired, customer change of mind..."
+                    value={returnReason}
+                    onChange={(e) => setReturnReason(e.target.value)}
+                    disabled={returnSubmitting}
+                    style={{
+                      width: "100%",
+                      padding: "0.5rem 0.75rem",
+                      borderRadius: "6px",
+                      border: "1px solid #d1d5db",
+                      fontSize: "0.875rem",
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", borderTop: "1px solid #e5e7eb", paddingTop: "1rem" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowReturnModal(false)}
+                  disabled={returnSubmitting}
+                  style={{
+                    padding: "0.5rem 1rem",
+                    backgroundColor: "#f3f4f6",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "6px",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={returnSubmitting || !refundPreview.hasItems}
+                  style={{
+                    padding: "0.5rem 1.25rem",
+                    backgroundColor: refundPreview.hasItems ? "#dc2626" : "#9ca3af",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "6px",
+                    fontWeight: "600",
+                    cursor: refundPreview.hasItems && !returnSubmitting ? "pointer" : "not-allowed",
+                    fontSize: "0.875rem",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+                  }}
+                >
+                  {returnSubmitting ? "Processing..." : `Confirm Refund ₱${refundPreview.totalRefund.toFixed(2)}`}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

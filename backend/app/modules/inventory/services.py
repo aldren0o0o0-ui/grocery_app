@@ -315,6 +315,7 @@ class InventoryService:
         reference_type: str,
         reference_id: int,
         remarks: Optional[str] = None,
+        commit: bool = True,
     ) -> StockMovement:
         """Reusable helper restoring previously deducted stock (e.g. cancelled sale or return)."""
         return cls.add_stock(
@@ -326,6 +327,7 @@ class InventoryService:
             reference_id=reference_id,
             remarks=remarks,
             audit_action="INVENTORY_RESTORED",
+            commit=commit,
         )
 
     @staticmethod

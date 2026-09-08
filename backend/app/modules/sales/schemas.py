@@ -112,7 +112,10 @@ def validate_checkout_input(data: Dict[str, Any]) -> Tuple[List[Dict[str, Any]],
 
 
 def sale_item_schema(item: SaleItem, is_owner: bool = False) -> Dict[str, Any]:
-    """Serializes a SaleItem with role-sensitive cost price exposure."""
+    """Serializes a SaleItem with role-sensitive cost price exposure and return tracking."""
+    returned_qty = sum((ri.quantity for ri in item.return_items), Decimal("0.000")) if item.return_items else Decimal("0.000")
+    returnable_qty = max(Decimal("0.000"), item.quantity - returned_qty)
+
     res = {
         "id": item.id,
         "product_id": item.product_id,
@@ -121,6 +124,8 @@ def sale_item_schema(item: SaleItem, is_owner: bool = False) -> Dict[str, Any]:
         "product_barcode": item.product.barcode if item.product else None,
         "product_unit": item.product.unit if item.product else "pcs",
         "quantity": f"{item.quantity:.3f}",
+        "returned_quantity": f"{returned_qty:.3f}",
+        "returnable_quantity": f"{returnable_qty:.3f}",
         "unit_price": f"{item.unit_price:.2f}",
         "subtotal": f"{item.subtotal:.2f}",
     }
@@ -130,7 +135,7 @@ def sale_item_schema(item: SaleItem, is_owner: bool = False) -> Dict[str, Any]:
 
 
 def sale_schema(sale: Sale, is_owner: bool = False) -> Dict[str, Any]:
-    """Full serialization of Sale entity with items and payment details."""
+    """Full serialization of Sale entity with items, payment details, and return status."""
     payments_data = []
     if sale.payments:
         for p in sale.payments:
@@ -150,16 +155,45 @@ def sale_schema(sale: Sale, is_owner: bool = False) -> Dict[str, Any]:
             "email": sale.cashier.email,
         }
 
+    returns_data = []
+    total_refunded = Decimal("0.00")
+    if sale.returns:
+        for ret in sale.returns:
+            total_refunded += ret.refund_amount
+            returns_data.append({
+                "id": ret.id,
+                "return_number": ret.return_number,
+                "refund_method": ret.refund_method,
+                "refund_amount": f"{ret.refund_amount:.2f}",
+                "reason": ret.reason,
+                "created_at": ret.created_at.isoformat() if ret.created_at else None,
+            })
+
+    total_sold_qty = sum((it.quantity for it in sale.items), Decimal("0.000")) if sale.items else Decimal("0.000")
+    total_returned_qty = sum((
+        sum((ri.quantity for ri in r.items), Decimal("0.000")) for r in sale.returns
+    ), Decimal("0.000")) if sale.returns else Decimal("0.000")
+
+    if sale.status == "RETURNED" or (total_sold_qty > Decimal("0.000") and total_returned_qty >= total_sold_qty):
+        return_state = "FULL"
+    elif total_returned_qty > Decimal("0.000"):
+        return_state = "PARTIAL"
+    else:
+        return_state = "NONE"
+
     return {
         "id": sale.id,
         "invoice_number": sale.invoice_number,
         "status": sale.status,
+        "return_state": return_state,
         "subtotal": f"{sale.subtotal:.2f}",
         "discount": f"{sale.discount:.2f}",
         "total": f"{sale.total:.2f}",
+        "total_refunded": f"{total_refunded:.2f}",
         "cashier": cashier_info,
         "items": [sale_item_schema(it, is_owner=is_owner) for it in (sale.items or [])],
         "payments": payments_data,
+        "returns": returns_data,
         "created_at": sale.created_at.isoformat() if sale.created_at else None,
         "updated_at": sale.updated_at.isoformat() if sale.updated_at else None,
     }
@@ -169,10 +203,24 @@ def sale_summary_schema(sale: Sale) -> Dict[str, Any]:
     """Concise representation of Sale for list view."""
     cashier_name = f"{sale.cashier.first_name} {sale.cashier.last_name}".strip() if sale.cashier else "Unknown"
     payment_method = sale.payments[0].payment_method if sale.payments else "N/A"
+
+    total_sold_qty = sum((it.quantity for it in sale.items), Decimal("0.000")) if sale.items else Decimal("0.000")
+    total_returned_qty = sum((
+        sum((ri.quantity for ri in r.items), Decimal("0.000")) for r in sale.returns
+    ), Decimal("0.000")) if sale.returns else Decimal("0.000")
+
+    if sale.status == "RETURNED" or (total_sold_qty > Decimal("0.000") and total_returned_qty >= total_sold_qty):
+        return_state = "FULL"
+    elif total_returned_qty > Decimal("0.000"):
+        return_state = "PARTIAL"
+    else:
+        return_state = "NONE"
+
     return {
         "id": sale.id,
         "invoice_number": sale.invoice_number,
         "status": sale.status,
+        "return_state": return_state,
         "cashier_id": sale.cashier_id,
         "cashier_name": cashier_name,
         "total": f"{sale.total:.2f}",

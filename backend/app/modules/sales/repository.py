@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db
+from app.modules.returns.models import SaleReturn, SaleReturnItem
 from app.modules.sales.models import Payment, Sale, SaleItem
 
 
@@ -12,13 +13,15 @@ class SalesRepository:
 
     @staticmethod
     def get_by_id(sale_id: int) -> Optional[Sale]:
-        """Loads a Sale with items, products, cashier, and payments."""
+        """Loads a Sale with items, products, cashier, payments, and returns."""
         query = (
             select(Sale)
             .options(
                 joinedload(Sale.cashier),
                 selectinload(Sale.items).joinedload(SaleItem.product),
+                selectinload(Sale.items).selectinload(SaleItem.return_items),
                 selectinload(Sale.payments),
+                selectinload(Sale.returns).selectinload(SaleReturn.items),
             )
             .filter_by(id=sale_id)
         )
@@ -31,7 +34,9 @@ class SalesRepository:
             .options(
                 joinedload(Sale.cashier),
                 selectinload(Sale.items).joinedload(SaleItem.product),
+                selectinload(Sale.items).selectinload(SaleItem.return_items),
                 selectinload(Sale.payments),
+                selectinload(Sale.returns).selectinload(SaleReturn.items),
             )
             .filter(Sale.invoice_number == invoice_number.strip())
         )
@@ -65,7 +70,9 @@ class SalesRepository:
             .options(
                 joinedload(Sale.cashier),
                 selectinload(Sale.items).joinedload(SaleItem.product),
+                selectinload(Sale.items).selectinload(SaleItem.return_items),
                 selectinload(Sale.payments),
+                selectinload(Sale.returns).selectinload(SaleReturn.items),
             )
         )
         count_query = select(func.count(Sale.id))

@@ -37,7 +37,10 @@ def get_token_for_role(role_name: str, email_suffix: str = "main") -> str:
 def cleanup_sales_data(app):
     def clean():
         with app.app_context():
-            AuditLog.query.filter(AuditLog.entity_type.in_(["Sale", "Product", "Category", "Purchase", "StockMovement"])).delete()
+            from app.modules.returns.models import SaleReturn, SaleReturnItem
+            AuditLog.query.filter(AuditLog.entity_type.in_(["Sale", "SaleReturn", "Product", "Category", "Purchase", "StockMovement"])).delete()
+            SaleReturnItem.query.delete()
+            SaleReturn.query.delete()
             Payment.query.delete()
             SaleItem.query.delete()
             Sale.query.delete()

@@ -39,7 +39,10 @@ def cleanup_inventory_data(app):
         with app.app_context():
             from app.modules.purchasing.models import PurchaseItem, Purchase
             from app.modules.sales.models import Sale, SaleItem, Payment
-            AuditLog.query.filter(AuditLog.entity_type.in_(["Product", "Category", "StockMovement", "Purchase", "Sale"])).delete()
+            from app.modules.returns.models import SaleReturn, SaleReturnItem
+            AuditLog.query.filter(AuditLog.entity_type.in_(["Product", "Category", "StockMovement", "Purchase", "Sale", "SaleReturn"])).delete()
+            SaleReturnItem.query.delete()
+            SaleReturn.query.delete()
             Payment.query.delete()
             SaleItem.query.delete()
             Sale.query.delete()
