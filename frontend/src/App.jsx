@@ -17,8 +17,9 @@ import POSPage from "./pages/POSPage";
 import SalesHistoryPage from "./pages/SalesHistoryPage";
 import ReturnsPage from "./pages/ReturnsPage";
 import ExpensesPage from "./pages/ExpensesPage";
+import DashboardPage from "./pages/DashboardPage";
 
-const HomePage = () => {
+export const HomePage = () => {
   const { user, logout } = useAuth();
 
   return (
@@ -221,7 +222,15 @@ function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <HomePage />
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
               </ProtectedRoute>
             }
           />

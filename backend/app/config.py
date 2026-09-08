@@ -26,3 +26,6 @@ class Config:
     JWT_COOKIE_SECURE = os.getenv("JWT_COOKIE_SECURE", "false").lower() in ("true", "1", "yes")
     JWT_COOKIE_SAMESITE = os.getenv("JWT_COOKIE_SAMESITE", "Lax")
     JWT_COOKIE_PATH = "/api/auth"
+
+    # Business timezone for operational day boundaries
+    BUSINESS_TIMEZONE = os.getenv("BUSINESS_TIMEZONE", "Asia/Manila")

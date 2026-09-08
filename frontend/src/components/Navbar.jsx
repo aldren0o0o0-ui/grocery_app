@@ -21,7 +21,7 @@ export const Navbar = () => {
     >
       <div style={{ display: "flex", alignItems: "center", gap: "2rem" }}>
         <Link
-          to="/products"
+          to="/dashboard"
           style={{
             fontSize: "1.125rem",
             fontWeight: "700",
@@ -32,6 +32,19 @@ export const Navbar = () => {
           Grocery SME
         </Link>
         <nav style={{ display: "flex", gap: "1rem" }}>
+          <Link
+            to="/dashboard"
+            style={{
+              fontSize: "0.875rem",
+              fontWeight: "600",
+              color: isCurrent("/dashboard") ? "#2563eb" : "#4b5563",
+              textDecoration: "none",
+              borderBottom: isCurrent("/dashboard") ? "2px solid #2563eb" : "2px solid transparent",
+              paddingBottom: "0.25rem",
+            }}
+          >
+            Dashboard
+          </Link>
           <Link
             to="/products"
             style={{
