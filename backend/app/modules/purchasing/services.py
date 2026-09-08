@@ -13,20 +13,16 @@ from app.modules.suppliers.models import Supplier
 from app.modules.users.models import User
 
 
+from app.common.sequences import SequenceService
+
+
 class PurchaseService:
     """Authoritative domain service for Purchasing workflows."""
 
     @classmethod
     def generate_reference_number(cls, p_date: date) -> str:
-        """Generates sequential reference number PUR-YYYYMMDD-XXXX."""
-        date_str = p_date.strftime("%Y%m%d")
-        count = PurchaseRepository.count_today_purchases(p_date) + 1
-        seq = count
-        while True:
-            ref = f"PUR-{date_str}-{seq:04d}"
-            if not PurchaseRepository.get_by_reference_number(ref):
-                return ref
-            seq += 1
+        """Generates concurrency-safe sequential reference number PUR-YYYYMMDD-XXXX."""
+        return SequenceService.next_reference("PUR", p_date)
 
     @classmethod
     def list_purchases(

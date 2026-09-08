@@ -13,20 +13,16 @@ from app.modules.sales.schemas import validate_checkout_input
 from app.modules.users.models import User
 
 
+from app.common.sequences import SequenceService
+
+
 class SalesService:
     """Authoritative domain service governing POS sales, server calculations, and atomic checkout."""
 
     @classmethod
     def generate_invoice_number(cls, sale_date: date) -> str:
-        """Generates sequential concurrency-safe invoice number SAL-YYYYMMDD-XXXX."""
-        date_str = sale_date.strftime("%Y%m%d")
-        count = SalesRepository.count_today_sales(sale_date) + 1
-        seq = count
-        while True:
-            ref = f"SAL-{date_str}-{seq:04d}"
-            if not SalesRepository.get_by_invoice_number(ref):
-                return ref
-            seq += 1
+        """Generates concurrency-safe sequential invoice number SAL-YYYYMMDD-XXXX."""
+        return SequenceService.next_reference("SAL", sale_date)
 
     @classmethod
     def get_sale(cls, sale_id: int) -> Sale:

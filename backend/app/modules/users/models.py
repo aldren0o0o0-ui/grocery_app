@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.modules.inventory.models import StockMovement
     from app.modules.purchasing.models import Purchase
     from app.modules.sales.models import Sale
+    from app.modules.returns.models import SaleReturn
     from app.modules.expenses.models import Expense
     from app.modules.audit.models import AuditLog
 
@@ -41,6 +42,7 @@ class User(TimestampMixin, db.Model):
     stock_movements: Mapped[List["StockMovement"]] = relationship("StockMovement", back_populates="creator")
     purchases: Mapped[List["Purchase"]] = relationship("Purchase", back_populates="creator")
     sales: Mapped[List["Sale"]] = relationship("Sale", back_populates="cashier")
+    processed_returns: Mapped[List["SaleReturn"]] = relationship("SaleReturn", back_populates="processor")
     expenses: Mapped[List["Expense"]] = relationship("Expense", back_populates="creator")
     audit_logs: Mapped[List["AuditLog"]] = relationship("AuditLog", back_populates="user")
 

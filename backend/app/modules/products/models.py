@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.modules.purchasing.models import PurchaseItem
     from app.modules.inventory.models import StockMovement
     from app.modules.sales.models import SaleItem
+    from app.modules.returns.models import SaleReturnItem
 
 
 class Product(TimestampMixin, db.Model):
@@ -74,6 +75,7 @@ class Product(TimestampMixin, db.Model):
     purchase_items: Mapped[List["PurchaseItem"]] = relationship("PurchaseItem", back_populates="product")
     stock_movements: Mapped[List["StockMovement"]] = relationship("StockMovement", back_populates="product")
     sale_items: Mapped[List["SaleItem"]] = relationship("SaleItem", back_populates="product")
+    return_items: Mapped[List["SaleReturnItem"]] = relationship("SaleReturnItem", back_populates="product")
 
     def __repr__(self) -> str:
         return f"<Product id={self.id} sku='{self.sku}' name='{self.name}'>"

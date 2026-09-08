@@ -10,6 +10,7 @@ from app.common.models import CreatedAtMixin, TimestampMixin
 if TYPE_CHECKING:
     from app.modules.users.models import User
     from app.modules.products.models import Product
+    from app.modules.returns.models import SaleReturn, SaleReturnItem
 
 
 class SaleStatus(str, Enum):
@@ -62,6 +63,7 @@ class Sale(TimestampMixin, db.Model):
     cashier: Mapped["User"] = relationship("User", back_populates="sales")
     items: Mapped[List["SaleItem"]] = relationship("SaleItem", back_populates="sale")
     payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="sale")
+    returns: Mapped[List["SaleReturn"]] = relationship("SaleReturn", back_populates="sale")
 
     def __repr__(self) -> str:
         return f"<Sale id={self.id} invoice='{self.invoice_number}' total={self.total} status='{self.status}'>"
@@ -99,6 +101,7 @@ class SaleItem(CreatedAtMixin, db.Model):
     # Relationships
     sale: Mapped["Sale"] = relationship("Sale", back_populates="items")
     product: Mapped["Product"] = relationship("Product", back_populates="sale_items")
+    return_items: Mapped[List["SaleReturnItem"]] = relationship("SaleReturnItem", back_populates="sale_item")
 
     def __repr__(self) -> str:
         return f"<SaleItem id={self.id} sale_id={self.sale_id} product_id={self.product_id} subtotal={self.subtotal}>"
