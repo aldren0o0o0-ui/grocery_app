@@ -1,8 +1,18 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import { getReturnsApi, getReturnDetailApi } from "../modules/returns/api";
+import {
+  PageHeader,
+  DataTable,
+  Pagination,
+  Drawer,
+  Button,
+  FilterBar,
+  StatusBadge,
+  Input,
+  Select,
+} from "../components/common";
 
 export const ReturnsPage = () => {
   const { user } = useAuth();
@@ -17,7 +27,7 @@ export const ReturnsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // Return detail modal
+  // Return detail drawer
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -39,8 +49,10 @@ export const ReturnsPage = () => {
 
         const res = await getReturnsApi(params);
         if (!ignore) {
-          setReturns(res.returns || []);
-          setPagination(res.pagination || { page: 1, per_page: 20, total: 0, pages: 1 });
+          const items = res?.returns || res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          const pag = res?.pagination || res?.data?.pagination || { page: 1, per_page: 20, total: items.length, pages: 1 };
+          setReturns(items);
+          setPagination(pag);
         }
       } catch (err) {
         if (!ignore) {
@@ -79,472 +91,486 @@ export const ReturnsPage = () => {
     setDateTo("");
   };
 
-  const totalRefundedSum = returns.reduce((acc, r) => acc + (parseFloat(r.refund_amount) || 0), 0);
-
-  return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f9fafb" }}>
-      <Navbar />
-
-      <main style={{ maxWidth: "1200px", margin: "2rem auto", padding: "0 1.5rem" }}>
-        {/* Header & Quick Action */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: "1.5rem", color: "#111827", fontWeight: "700" }}>Sales Returns & Refunds</h1>
-            <p style={{ margin: "0.25rem 0 0", color: "#6b7280", fontSize: "0.875rem" }}>
-              {isOwner ? "Audit trail of returned items and customer refunds" : "Returns processed by your register"}
-            </p>
-          </div>
-          <Link
-            to="/sales"
-            style={{
-              padding: "0.6rem 1.2rem",
-              backgroundColor: "#2563eb",
-              color: "#ffffff",
-              textDecoration: "none",
-              borderRadius: "6px",
-              fontWeight: "600",
-              fontSize: "0.875rem",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-            }}
-          >
-            ← Back to Sales History
-          </Link>
-        </div>
-
-        {/* Metric Summary Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
-          <div style={{ backgroundColor: "#ffffff", padding: "1.25rem", borderRadius: "8px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
-            <div style={{ fontSize: "0.8rem", color: "#6b7280", fontWeight: "600", textTransform: "uppercase" }}>Total Returns Logged</div>
-            <div style={{ fontSize: "1.75rem", fontWeight: "700", color: "#111827", marginTop: "0.25rem" }}>
-              {pagination.total}
-            </div>
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>Across all business dates</div>
-          </div>
-
-          <div style={{ backgroundColor: "#ffffff", padding: "1.25rem", borderRadius: "8px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
-            <div style={{ fontSize: "0.8rem", color: "#6b7280", fontWeight: "600", textTransform: "uppercase" }}>Current View Refunds</div>
-            <div style={{ fontSize: "1.75rem", fontWeight: "700", color: "#dc2626", marginTop: "0.25rem" }}>
-              ₱{totalRefundedSum.toFixed(2)}
-            </div>
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>Sum of current page results</div>
-          </div>
-
-          <div style={{ backgroundColor: "#ffffff", padding: "1.25rem", borderRadius: "8px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
-            <div style={{ fontSize: "0.8rem", color: "#6b7280", fontWeight: "600", textTransform: "uppercase" }}>Inventory Status</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: "600", color: "#059669", marginTop: "0.5rem" }}>
-              ✓ Stock Auto-Restored
-            </div>
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>Audited by InventoryService</div>
-          </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div
+  const columns = [
+    {
+      header: "Return #",
+      field: "return_number",
+      render: (val) => (
+        <span
           style={{
-            backgroundColor: "#ffffff",
-            padding: "1rem",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
-            marginBottom: "1.5rem",
-            display: "flex",
-            gap: "1rem",
-            flexWrap: "wrap",
-            alignItems: "flex-end",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+            fontFamily: "var(--font-mono)",
+            fontWeight: "600",
+            fontSize: "12px",
+            color: "var(--color-danger)",
           }}
         >
-          <div style={{ flex: "1 1 200px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Search
-            </label>
-            <input
-              type="text"
-              placeholder="Return #, invoice, or reason..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
+          {val}
+        </span>
+      ),
+    },
+    {
+      header: "Invoice #",
+      field: "sale_invoice_number",
+      render: (val) => (
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontWeight: "500",
+            color: "var(--color-brand)",
+          }}
+        >
+          {val}
+        </span>
+      ),
+    },
+    {
+      header: "Date & Time",
+      field: "created_at",
+      render: (val) => (
+        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          {new Date(val).toLocaleString()}
+        </span>
+      ),
+    },
+    {
+      header: "Processed By",
+      field: "processor_name",
+      render: (val) => (
+        <span style={{ fontSize: "13px", fontWeight: "500" }}>{val || "—"}</span>
+      ),
+    },
+    {
+      header: "Method",
+      field: "refund_method",
+      render: (val) => {
+        let badgeVariant = "default";
+        if (val === "CASH") badgeVariant = "success";
+        if (val === "GCASH") badgeVariant = "info";
+        if (val === "CARD") badgeVariant = "warning";
+        return <StatusBadge status={val} variant={badgeVariant} />;
+      },
+    },
+    {
+      header: "Refund Amount",
+      field: "refund_amount",
+      align: "right",
+      render: (val) => (
+        <span
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontWeight: "700",
+            color: "var(--color-danger)",
+            fontSize: "13px",
+          }}
+        >
+          ₱{parseFloat(val || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      header: "Reason",
+      field: "reason",
+      render: (val) => (
+        <span
+          title={val}
+          style={{
+            display: "inline-block",
+            maxWidth: "180px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: "var(--color-text-secondary)",
+            fontSize: "12px",
+          }}
+        >
+          {val || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Action",
+      align: "center",
+      render: (_, row) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => handleOpenDetail(row.id)}
+        >
+          View Items
+        </Button>
+      ),
+    },
+  ];
 
-          <div style={{ width: "160px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Refund Method
-            </label>
-            <select
-              value={refundMethod}
-              onChange={(e) => {
-                setRefundMethod(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                backgroundColor: "#ffffff",
-                boxSizing: "border-box",
-              }}
-            >
-              <option value="ALL">All Methods</option>
-              <option value="CASH">Cash</option>
-              <option value="GCASH">GCash</option>
-              <option value="CARD">Card</option>
-            </select>
-          </div>
+  return (
+    <div style={{ maxWidth: "1280px", margin: "0 auto", padding: "24px 20px" }}>
+      <PageHeader
+        title="Sales Returns & Refunds"
+        subtitle={
+          isOwner
+            ? "Audit trail of returned merchandise, restored stock, and customer refunds"
+            : "Returns processed at your register"
+        }
+        actions={
+          <Link to="/sales" style={{ textDecoration: "none" }}>
+            <Button variant="secondary" size="sm">
+              ← Back to Sales History
+            </Button>
+          </Link>
+        }
+      />
 
-          <div style={{ width: "150px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Date From
-            </label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                boxSizing: "border-box",
-              }}
-            />
+      {/* Metric Summary Cards */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: "16px",
+          marginBottom: "20px",
+        }}
+      >
+        <div
+          style={{
+            backgroundColor: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-lg)",
+            padding: "16px 20px",
+            boxShadow: "var(--shadow-xs)",
+          }}
+        >
+          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--color-text-muted)" }}>
+            Total Returns Logged
           </div>
-
-          <div style={{ width: "150px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Date To
-            </label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                boxSizing: "border-box",
-              }}
-            />
+          <div style={{ fontSize: "24px", fontWeight: "700", color: "var(--color-text)", marginTop: "4px" }}>
+            {pagination.total}
           </div>
-
-          <button
-            onClick={handleResetFilters}
-            style={{
-              padding: "0.5rem 1rem",
-              backgroundColor: "#f3f4f6",
-              border: "1px solid #d1d5db",
-              borderRadius: "6px",
-              fontSize: "0.875rem",
-              color: "#374151",
-              cursor: "pointer",
-              fontWeight: "600",
-            }}
-          >
-            Reset
-          </button>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+            Audit-tracked returns across all dates
+          </div>
         </div>
 
-        {/* Error Alert */}
-        {error && (
-          <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem" }}>
-            {error}
+        <div
+          style={{
+            backgroundColor: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-lg)",
+            padding: "16px 20px",
+            boxShadow: "var(--shadow-xs)",
+          }}
+        >
+          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--color-text-muted)" }}>
+            Inventory Status
+          </div>
+          <div style={{ fontSize: "16px", fontWeight: "700", color: "var(--color-brand)", marginTop: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+            <span>✓</span> Stock Auto-Restored
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "4px" }}>
+            Ledger audited by InventoryService
+          </div>
+        </div>
+
+        <div
+          style={{
+            backgroundColor: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            borderRadius: "var(--radius-lg)",
+            padding: "16px 20px",
+            boxShadow: "var(--shadow-xs)",
+          }}
+        >
+          <div style={{ fontSize: "11px", fontWeight: "600", textTransform: "uppercase", color: "var(--color-text-muted)" }}>
+            Active Records
+          </div>
+          <div style={{ fontSize: "24px", fontWeight: "700", color: "var(--color-text)", marginTop: "4px" }}>
+            {returns.length}
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+            Matching active filters on this page
+          </div>
+        </div>
+      </div>
+
+      {/* Filter Bar */}
+      <FilterBar>
+        <div style={{ flex: "1 1 220px" }}>
+          <Input
+            label="Search"
+            placeholder="Return #, invoice, or reason..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+          />
+        </div>
+
+        <div style={{ width: "160px" }}>
+          <Select
+            label="Refund Method"
+            value={refundMethod}
+            onChange={(e) => {
+              setRefundMethod(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            options={[
+              { value: "ALL", label: "All Methods" },
+              { value: "CASH", label: "Cash" },
+              { value: "GCASH", label: "GCash" },
+              { value: "CARD", label: "Card" },
+            ]}
+          />
+        </div>
+
+        <div style={{ width: "150px" }}>
+          <Input
+            type="date"
+            label="Date From"
+            value={dateFrom}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+          />
+        </div>
+
+        <div style={{ width: "150px" }}>
+          <Input
+            type="date"
+            label="Date To"
+            value={dateTo}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+          />
+        </div>
+
+        <div style={{ paddingBottom: "1px" }}>
+          <Button variant="secondary" size="md" onClick={handleResetFilters}>
+            Reset
+          </Button>
+        </div>
+      </FilterBar>
+
+      {/* Error Alert */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: "12px 16px",
+            backgroundColor: "var(--color-danger-soft)",
+            border: "1px solid var(--color-danger)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-danger)",
+            fontSize: "13px",
+            marginBottom: "16px",
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Modern Returns DataTable */}
+      <DataTable
+        columns={columns}
+        data={returns}
+        loading={loading}
+        emptyMessage="No return records found matching your filters."
+      />
+
+      {/* Pagination */}
+      <Pagination
+        currentPage={pagination.page}
+        totalPages={pagination.pages}
+        onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
+        totalItems={pagination.total}
+        pageSize={pagination.per_page}
+      />
+
+      {/* Return Detail Drawer */}
+      <Drawer
+        isOpen={Boolean(selectedReturn)}
+        onClose={() => setSelectedReturn(null)}
+        title={selectedReturn ? `Return ${selectedReturn.return_number}` : "Return Details"}
+        width="540px"
+      >
+        {detailError && (
+          <div
+            role="alert"
+            style={{
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
+            }}
+          >
+            {detailError}
           </div>
         )}
 
-        {/* Returns Table */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
-            overflow: "hidden",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-          }}
-        >
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.875rem" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb", color: "#374151" }}>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Return #</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Original Invoice #</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Date & Time</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Processed By</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Method</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "right" }}>Refund Amount</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Reason</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "center" }}>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="8" style={{ padding: "3rem", textAlign: "center", color: "#6b7280" }}>
-                    Loading returns history...
-                  </td>
-                </tr>
-              ) : returns.length === 0 ? (
-                <tr>
-                  <td colSpan="8" style={{ padding: "3rem", textAlign: "center", color: "#9ca3af" }}>
-                    No return records found matching your filters.
-                  </td>
-                </tr>
-              ) : (
-                returns.map((ret) => (
-                  <tr key={ret.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                    <td style={{ padding: "0.75rem 1rem", fontWeight: "600", color: "#b91c1c" }}>
-                      {ret.return_number}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", fontWeight: "500", color: "#2563eb" }}>
-                      {ret.sale_invoice_number}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", color: "#4b5563" }}>
-                      {new Date(ret.created_at).toLocaleString()}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", color: "#4b5563" }}>
-                      {ret.processor_name}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "0.15rem 0.5rem",
-                          borderRadius: "4px",
-                          fontSize: "0.75rem",
-                          fontWeight: "600",
-                          backgroundColor: "#fef2f2",
-                          color: "#991b1b",
-                        }}
-                      >
-                        {ret.refund_method}
-                      </span>
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: "700", color: "#dc2626" }}>
-                      ₱{parseFloat(ret.refund_amount).toFixed(2)}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", color: "#4b5563", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {ret.reason}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", textAlign: "center" }}>
-                      <button
-                        onClick={() => handleOpenDetail(ret.id)}
-                        style={{
-                          padding: "0.3rem 0.75rem",
-                          backgroundColor: "#eff6ff",
-                          color: "#2563eb",
-                          border: "1px solid #bfdbfe",
-                          borderRadius: "4px",
-                          fontSize: "0.75rem",
-                          fontWeight: "600",
-                          cursor: "pointer",
-                        }}
-                      >
-                        View Items
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-
-          {/* Pagination */}
-          <div
-            style={{
-              padding: "0.75rem 1rem",
-              borderTop: "1px solid #e5e7eb",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              fontSize: "0.875rem",
-              color: "#4b5563",
-            }}
-          >
-            <span>
-              Showing {returns.length} of {pagination.total} returns
-            </span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                disabled={pagination.page <= 1}
-                onClick={() => setPagination((prev) => ({ ...prev, page: prev.page - 1 }))}
-                style={{
-                  padding: "0.3rem 0.75rem",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "4px",
-                  backgroundColor: "#ffffff",
-                  cursor: pagination.page <= 1 ? "not-allowed" : "pointer",
-                  opacity: pagination.page <= 1 ? 0.5 : 1,
-                }}
-              >
-                Previous
-              </button>
-              <span style={{ padding: "0.3rem 0.5rem" }}>
-                Page {pagination.page} of {pagination.pages}
-              </span>
-              <button
-                disabled={pagination.page >= pagination.pages}
-                onClick={() => setPagination((prev) => ({ ...prev, page: prev.page + 1 }))}
-                style={{
-                  padding: "0.3rem 0.75rem",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "4px",
-                  backgroundColor: "#ffffff",
-                  cursor: pagination.page >= pagination.pages ? "not-allowed" : "pointer",
-                  opacity: pagination.page >= pagination.pages ? 0.5 : 1,
-                }}
-              >
-                Next
-              </button>
-            </div>
+        {detailLoading ? (
+          <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-secondary)" }}>
+            Loading return details...
           </div>
-        </div>
-      </main>
-
-      {/* Return Detail Modal */}
-      {selectedReturn && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "1.5rem",
-              width: "600px",
-              maxWidth: "95%",
-              boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-              maxHeight: "90vh",
-              overflowY: "auto",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#111827" }}>
-                Return Receipt — {selectedReturn.return_number}
-              </h2>
-              <button
-                onClick={() => setSelectedReturn(null)}
-                style={{ background: "none", border: "none", fontSize: "1.25rem", cursor: "pointer" }}
-              >
-                ✕
-              </button>
+        ) : selectedReturn ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+            {/* Meta Information Cards */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "10px",
+                padding: "14px",
+                backgroundColor: "var(--color-bg)",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-border)",
+                fontSize: "12px",
+              }}
+            >
+              <div>
+                <span style={{ color: "var(--color-text-muted)", display: "block" }}>Original Invoice</span>
+                <span style={{ fontWeight: "600", fontFamily: "var(--font-mono)", color: "var(--color-brand)" }}>
+                  {selectedReturn.sale?.invoice_number || selectedReturn.sale_invoice_number}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: "var(--color-text-muted)", display: "block" }}>Processed Date</span>
+                <span style={{ fontWeight: "500", color: "var(--color-text)" }}>
+                  {new Date(selectedReturn.created_at).toLocaleString()}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: "var(--color-text-muted)", display: "block" }}>Processed By</span>
+                <span style={{ fontWeight: "500", color: "var(--color-text)" }}>
+                  {selectedReturn.processor?.name || selectedReturn.processor_name || "—"}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: "var(--color-text-muted)", display: "block" }}>Refund Method</span>
+                <span style={{ fontWeight: "600", color: "var(--color-text)" }}>
+                  {selectedReturn.refund_method}
+                </span>
+              </div>
+              <div style={{ gridColumn: "1 / -1", borderTop: "1px solid var(--color-border)", paddingTop: "8px", marginTop: "4px" }}>
+                <span style={{ color: "var(--color-text-muted)", display: "block" }}>Reason</span>
+                <span style={{ fontStyle: "italic", color: "var(--color-text)" }}>
+                  {selectedReturn.reason || "None specified"}
+                </span>
+              </div>
             </div>
 
-            {detailError && (
-              <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem" }}>
-                {detailError}
-              </div>
-            )}
-
-            {detailLoading ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "#6b7280" }}>Loading return items...</div>
-            ) : (
-              <div>
-                {/* Meta details */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", fontSize: "0.85rem", marginBottom: "1rem", color: "#4b5563", backgroundColor: "#f9fafb", padding: "0.75rem", borderRadius: "6px" }}>
-                  <div><strong>Invoice #:</strong> {selectedReturn.sale?.invoice_number}</div>
-                  <div><strong>Processed Date:</strong> {new Date(selectedReturn.created_at).toLocaleString()}</div>
-                  <div><strong>Processed By:</strong> {selectedReturn.processor?.name}</div>
-                  <div><strong>Refund Method:</strong> {selectedReturn.refund_method}</div>
-                  <div style={{ gridColumn: "1 / -1" }}><strong>Reason:</strong> {selectedReturn.reason}</div>
-                </div>
-
-                {/* Items breakdown table */}
-                <div style={{ fontWeight: "600", fontSize: "0.875rem", marginBottom: "0.5rem", color: "#111827" }}>
-                  Restored Inventory & Refund Breakdown
-                </div>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            {/* Restored Items Breakdown */}
+            <div>
+              <h3
+                style={{
+                  fontSize: "13px",
+                  fontWeight: "700",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.05em",
+                  color: "var(--color-text-muted)",
+                  margin: "0 0 8px",
+                }}
+              >
+                Restored Stock & Refund Breakdown
+              </h3>
+              <div
+                style={{
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-md)",
+                  overflow: "hidden",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
                   <thead>
-                    <tr style={{ borderBottom: "2px solid #e5e7eb", textAlign: "left", color: "#374151", backgroundColor: "#f3f4f6" }}>
-                      <th style={{ padding: "0.5rem" }}>Product</th>
-                      <th style={{ padding: "0.5rem", textAlign: "center" }}>Returned Qty</th>
-                      <th style={{ padding: "0.5rem", textAlign: "right" }}>Unit Price</th>
-                      {isOwner && <th style={{ padding: "0.5rem", textAlign: "right", color: "#6b7280" }}>Cost</th>}
-                      <th style={{ padding: "0.5rem", textAlign: "right" }}>Refund Subtotal</th>
+                    <tr style={{ backgroundColor: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
+                      <th style={{ padding: "8px 12px" }}>Product</th>
+                      <th style={{ padding: "8px 12px", textAlign: "center" }}>Qty Returned</th>
+                      <th style={{ padding: "8px 12px", textAlign: "right" }}>Unit Price</th>
+                      {isOwner && (
+                        <th style={{ padding: "8px 12px", textAlign: "right", color: "var(--color-text-muted)" }}>
+                          Cost
+                        </th>
+                      )}
+                      <th style={{ padding: "8px 12px", textAlign: "right" }}>Refund Subtotal</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedReturn.items?.map((it) => (
-                      <tr key={it.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                        <td style={{ padding: "0.5rem" }}>
-                          <div style={{ fontWeight: "600", color: "#111827" }}>{it.product_name}</div>
-                          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{it.product_sku}</div>
+                      <tr key={it.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
+                        <td style={{ padding: "8px 12px" }}>
+                          <div style={{ fontWeight: "600", color: "var(--color-text)" }}>{it.product_name}</div>
+                          <div style={{ fontSize: "11px", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
+                            {it.product_sku}
+                          </div>
                         </td>
-                        <td style={{ padding: "0.5rem", textAlign: "center", fontWeight: "600", color: "#059669" }}>
+                        <td style={{ padding: "8px 12px", textAlign: "center", fontWeight: "600", color: "var(--color-brand)" }}>
                           +{parseFloat(it.quantity)} {it.product_unit}
                         </td>
-                        <td style={{ padding: "0.5rem", textAlign: "right" }}>
+                        <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)" }}>
                           ₱{parseFloat(it.unit_price).toFixed(2)}
                         </td>
                         {isOwner && (
-                          <td style={{ padding: "0.5rem", textAlign: "right", color: "#6b7280" }}>
+                          <td style={{ padding: "8px 12px", textAlign: "right", fontFamily: "var(--font-mono)", color: "var(--color-text-muted)" }}>
                             ₱{it.cost_price ? parseFloat(it.cost_price).toFixed(2) : "0.00"}
                           </td>
                         )}
-                        <td style={{ padding: "0.5rem", textAlign: "right", fontWeight: "700", color: "#dc2626" }}>
+                        <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: "700", fontFamily: "var(--font-mono)", color: "var(--color-danger)" }}>
                           ₱{parseFloat(it.refund_subtotal).toFixed(2)}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-
-                {/* Total Refund Summary */}
-                <div style={{ borderTop: "2px solid #e5e7eb", paddingTop: "0.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: "1rem", fontWeight: "600", color: "#374151" }}>Total Refund Issued:</span>
-                  <span style={{ fontSize: "1.25rem", fontWeight: "700", color: "#dc2626" }}>
-                    ₱{parseFloat(selectedReturn.refund_amount).toFixed(2)}
-                  </span>
-                </div>
-
-                <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
-                  <button
-                    onClick={() => setSelectedReturn(null)}
-                    style={{
-                      padding: "0.5rem 1.25rem",
-                      backgroundColor: "#f3f4f6",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
-                      fontWeight: "600",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Close
-                  </button>
-                </div>
               </div>
-            )}
+            </div>
+
+            {/* Total Refund Banner */}
+            <div
+              style={{
+                padding: "14px 16px",
+                backgroundColor: "var(--color-danger-soft)",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-danger)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-danger)" }}>
+                Total Refund Issued:
+              </span>
+              <span style={{ fontSize: "20px", fontWeight: "700", fontFamily: "var(--font-mono)", color: "var(--color-danger)" }}>
+                ₱{parseFloat(selectedReturn.refund_amount || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+
+            <div
+              style={{
+                fontSize: "11px",
+                color: "var(--color-text-secondary)",
+                backgroundColor: "var(--color-bg)",
+                padding: "10px 12px",
+                borderRadius: "var(--radius-md)",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <span style={{ color: "var(--color-brand)", fontSize: "14px" }}>✓</span>
+              <span>Inventory levels were automatically replenished to active stock upon return authorization.</span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "8px" }}>
+              <Button variant="secondary" size="md" onClick={() => setSelectedReturn(null)}>
+                Close
+              </Button>
+            </div>
           </div>
-        </div>
-      )}
+        ) : null}
+      </Drawer>
     </div>
   );
 };

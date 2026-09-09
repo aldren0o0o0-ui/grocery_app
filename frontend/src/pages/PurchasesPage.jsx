@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import {
   getPurchasesApi,
@@ -11,6 +10,19 @@ import {
 } from "../modules/purchasing/api";
 import { getSuppliersApi } from "../modules/suppliers/api";
 import { getProductsApi } from "../modules/products/api";
+import {
+  PageHeader,
+  Button,
+  DataTable,
+  Pagination,
+  StatusBadge,
+  Modal,
+  FormField,
+  Input,
+  Select,
+  ConfirmDialog,
+  Toast,
+} from "../components/common";
 
 export const PurchasesPage = () => {
   const { user } = useAuth();
@@ -24,6 +36,7 @@ export const PurchasesPage = () => {
   const [endDate, setEndDate] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Dropdown reference data
@@ -57,12 +70,10 @@ export const PurchasesPage = () => {
           getSuppliersApi({ is_active: true, per_page: 100 }),
           getProductsApi({ is_active: true, per_page: 100 }),
         ]);
-        if (supRes.status === "success") {
-          setSuppliersList(supRes.data.items || []);
-        }
-        if (prodRes.status === "success") {
-          setProductsList(prodRes.data?.items || prodRes.items || []);
-        }
+        const supItems = supRes?.data?.items || supRes?.items || (Array.isArray(supRes) ? supRes : []);
+        const prodItems = prodRes?.data?.items || prodRes?.items || (Array.isArray(prodRes) ? prodRes : []);
+        setSuppliersList(supItems);
+        setProductsList(prodItems);
       } catch (err) {
         console.error("Failed to load reference data for purchases", err);
       }
@@ -86,12 +97,16 @@ export const PurchasesPage = () => {
 
         const res = await getPurchasesApi(params);
         if (!ignore) {
-          if (res.status === "success") {
-            setPurchases(res.data.items || []);
-            setPagination(res.data.pagination || { page: 1, per_page: 20, total: 0, pages: 1 });
-          } else {
-            setError(res.message || "Failed to load purchases.");
-          }
+          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          const pag = res?.data?.pagination || res?.pagination || {
+            page: pagination.page,
+            per_page: 20,
+            total: items.length,
+            pages: 1,
+          };
+          setPurchases(items);
+          setPagination(pag);
+          setError("");
         }
       } catch (err) {
         if (!ignore) {
@@ -128,7 +143,6 @@ export const PurchasesPage = () => {
 
   const handleAddItemRow = () => {
     if (productsList.length === 0) return;
-    // Pick the first product not already in items
     const usedProductIds = new Set(createForm.items.map((it) => String(it.product_id)));
     const availableProd = productsList.find((p) => !usedProductIds.has(String(p.id))) || productsList[0];
 
@@ -152,34 +166,31 @@ export const PurchasesPage = () => {
     }));
   };
 
-  const handleItemFieldChange = (idx, field, val) => {
+  const handleItemFieldChange = (idx, field, value) => {
     setCreateForm((prev) => {
-      const newItems = [...prev.items];
-      newItems[idx] = { ...newItems[idx], [field]: val };
+      const nextItems = [...prev.items];
+      nextItems[idx] = { ...nextItems[idx], [field]: value };
 
-      // If product changed, update default unit_cost from product
       if (field === "product_id") {
-        const prod = productsList.find((p) => String(p.id) === String(val));
+        const prod = productsList.find((p) => String(p.id) === String(value));
         if (prod && prod.cost_price) {
-          newItems[idx].unit_cost = String(prod.cost_price);
+          nextItems[idx].unit_cost = String(prod.cost_price);
         }
       }
-      return { ...prev, items: newItems };
+      return { ...prev, items: nextItems };
     });
   };
 
-  const computeModalTotal = () => {
-    return createForm.items.reduce((acc, it) => {
+  const computeOrderTotal = () => {
+    return createForm.items.reduce((sum, it) => {
       const q = parseFloat(it.quantity) || 0;
       const c = parseFloat(it.unit_cost) || 0;
-      return acc + q * c;
+      return sum + Math.round(q * c * 100) / 100;
     }, 0);
   };
 
   const handleCreateSubmit = async (e) => {
     e.preventDefault();
-    setCreateError("");
-
     if (!createForm.supplier_id) {
       setCreateError("Please select a supplier.");
       return;
@@ -189,58 +200,61 @@ export const PurchasesPage = () => {
       return;
     }
 
-    // Validate unique products in line items
-    const productIds = createForm.items.map((it) => it.product_id);
-    if (new Set(productIds).size !== productIds.length) {
-      setCreateError("Duplicate products detected in line items. Each product must appear at most once.");
-      return;
-    }
-
+    const seenProds = new Set();
     for (let i = 0; i < createForm.items.length; i++) {
       const it = createForm.items[i];
-      const q = parseFloat(it.quantity);
-      const c = parseFloat(it.unit_cost);
-      if (isNaN(q) || q <= 0) {
-        setCreateError(`Item #${i + 1}: Quantity must be greater than 0.`);
+      if (!it.product_id) {
+        setCreateError(`Item #${i + 1} has no product selected.`);
         return;
       }
+      if (seenProds.has(it.product_id)) {
+        setCreateError(`Item #${i + 1}: Duplicate product in purchase order.`);
+        return;
+      }
+      seenProds.add(it.product_id);
+
+      const q = parseFloat(it.quantity);
+      if (isNaN(q) || q <= 0) {
+        setCreateError(`Item #${i + 1} quantity must be greater than zero.`);
+        return;
+      }
+      const c = parseFloat(it.unit_cost);
       if (isNaN(c) || c < 0) {
-        setCreateError(`Item #${i + 1}: Unit cost cannot be negative.`);
+        setCreateError(`Item #${i + 1} unit cost cannot be negative.`);
         return;
       }
     }
 
     setCreating(true);
-    try {
-      const payload = {
-        supplier_id: parseInt(createForm.supplier_id, 10),
-        purchase_date: createForm.purchase_date,
-        items: createForm.items.map((it) => ({
-          product_id: parseInt(it.product_id, 10),
-          quantity: it.quantity,
-          unit_cost: it.unit_cost,
-        })),
-      };
-      if (createForm.reference_number.trim()) {
-        payload.reference_number = createForm.reference_number.trim().toUpperCase();
-      }
+    setCreateError("");
 
-      const res = await createPurchaseApi(payload);
-      if (res.status === "success") {
-        closeCreateModal();
-        setRefreshTrigger((prev) => prev + 1);
-      } else {
-        setCreateError(res.message || "Failed to create purchase.");
-      }
+    const payload = {
+      supplier_id: parseInt(createForm.supplier_id, 10),
+      purchase_date: createForm.purchase_date,
+      items: createForm.items.map((it) => ({
+        product_id: parseInt(it.product_id, 10),
+        quantity: it.quantity,
+        unit_cost: it.unit_cost,
+      })),
+    };
+    if (createForm.reference_number.trim()) {
+      payload.reference_number = createForm.reference_number.trim();
+    }
+
+    try {
+      await createPurchaseApi(payload);
+      setToastMessage({ type: "success", text: "Purchase order created successfully." });
+      setIsCreateModalOpen(false);
+      setLoading(true);
+      setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      setCreateError(err.response?.data?.error?.message || "Failed to create purchase.");
+      setCreateError(err.response?.data?.error?.message || err.message || "Failed to create purchase order.");
     } finally {
       setCreating(false);
     }
   };
 
-  // Action Confirmation Handlers
-  const openConfirmModal = (type, purchase) => {
+  const handleOpenConfirm = (type, purchase) => {
     setConfirmModal({
       isOpen: true,
       type,
@@ -249,861 +263,598 @@ export const PurchasesPage = () => {
     });
   };
 
-  const closeConfirmModal = () => {
-    setConfirmModal({ isOpen: false, type: null, purchase: null, loading: false });
-  };
+  const handleExecuteConfirm = async () => {
+    const { type, purchase } = confirmModal;
+    if (!purchase) return;
 
-  const handleConfirmAction = async () => {
-    if (!confirmModal.purchase) return;
     setConfirmModal((prev) => ({ ...prev, loading: true }));
     try {
-      const id = confirmModal.purchase.id;
-      if (confirmModal.type === "RECEIVE") {
-        await receivePurchaseApi(id);
-      } else if (confirmModal.type === "CANCEL") {
-        await cancelPurchaseApi(id);
-      } else if (confirmModal.type === "DELETE") {
-        await deletePurchaseApi(id);
+      if (type === "RECEIVE") {
+        await receivePurchaseApi(purchase.id);
+        setToastMessage({
+          type: "success",
+          text: `Purchase ${purchase.purchase_number} marked as RECEIVED. Stock added to inventory!`,
+        });
+      } else if (type === "CANCEL") {
+        await cancelPurchaseApi(purchase.id);
+        setToastMessage({
+          type: "info",
+          text: `Purchase ${purchase.purchase_number} has been CANCELLED.`,
+        });
+      } else if (type === "DELETE") {
+        await deletePurchaseApi(purchase.id);
+        setToastMessage({
+          type: "info",
+          text: `Purchase ${purchase.purchase_number} was permanently deleted.`,
+        });
       }
-      closeConfirmModal();
+      setConfirmModal({ isOpen: false, type: null, purchase: null, loading: false });
+      setLoading(true);
       setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      alert(err.response?.data?.error?.message || `Failed to ${confirmModal.type.toLowerCase()} purchase.`);
+      setToastMessage({
+        type: "error",
+        text: err.response?.data?.error?.message || `Failed to process purchase action.`,
+      });
       setConfirmModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  const getStatusBadgeStyle = (status) => {
-    switch (status) {
-      case "RECEIVED":
-        return { backgroundColor: "#d1fae5", color: "#065f46", border: "1px solid #a7f3d0" };
-      case "CANCELLED":
-        return { backgroundColor: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" };
-      case "DRAFT":
-      default:
-        return { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" };
-    }
-  };
+  const columns = [
+    {
+      header: "Purchase Order",
+      accessor: (p) => (
+        <div>
+          <Link
+            to={`/purchases/${p.id}`}
+            style={{ fontWeight: 700, color: "var(--color-primary)", textDecoration: "none" }}
+          >
+            {p.purchase_number}
+          </Link>
+          <div style={{ fontSize: "11px", color: "var(--color-text-muted)", marginTop: "2px" }}>
+            {p.created_at ? new Date(p.created_at).toLocaleDateString() : "—"}
+          </div>
+        </div>
+      ),
+    },
+    {
+      header: "Supplier",
+      accessor: (p) => (
+        <div>
+          <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{p.supplier?.name || "—"}</div>
+          {p.supplier?.contact_person && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+              {p.supplier.contact_person}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      header: "Purchase Date",
+      accessor: (p) => (
+        <span style={{ fontSize: "13px", color: "var(--color-text)" }}>{p.purchase_date}</span>
+      ),
+    },
+    {
+      header: "Reference #",
+      accessor: (p) => (
+        <span style={{ fontSize: "12px", fontFamily: "var(--font-mono)", color: "var(--color-text-secondary)" }}>
+          {p.reference_number || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Total Amount",
+      align: "right",
+      accessor: (p) => (
+        <strong style={{ fontFamily: "var(--font-mono)", fontSize: "14px", color: "var(--color-text)" }}>
+          ₱{parseFloat(p.total_amount || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </strong>
+      ),
+    },
+    {
+      header: "Status",
+      accessor: (p) => (
+        <StatusBadge
+          status={p.status}
+          variant={p.status === "RECEIVED" ? "success" : p.status === "DRAFT" ? "warning" : "danger"}
+        />
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (p) => (
+        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+          <Link
+            to={`/purchases/${p.id}`}
+            style={{
+              padding: "4px 10px",
+              backgroundColor: "var(--color-surface)",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "var(--color-text)",
+              textDecoration: "none",
+            }}
+          >
+            Details
+          </Link>
+          {p.status === "DRAFT" && (
+            <>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleOpenConfirm("RECEIVE", p)}
+              >
+                Receive
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleOpenConfirm("CANCEL", p)}
+              >
+                Cancel
+              </Button>
+              {isOwner && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  onClick={() => handleOpenConfirm("DELETE", p)}
+                >
+                  Delete
+                </Button>
+              )}
+            </>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}>
-      <Navbar />
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Toast */}
+      {toastMessage && (
+        <Toast
+          type={toastMessage.type}
+          message={toastMessage.text}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
 
-      <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "2rem 1.5rem" }}>
-        {/* Header section */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "1rem",
-            marginBottom: "2rem",
-          }}
-        >
-          <div>
-            <h1 style={{ fontSize: "1.875rem", fontWeight: "700", color: "#0f172a", margin: 0 }}>
-              Purchases & Goods Receiving
-            </h1>
-            <p style={{ color: "#64748b", margin: "0.25rem 0 0", fontSize: "0.95rem" }}>
-              Create, track, and receive stock purchase orders from suppliers.
-            </p>
-          </div>
-
-          <button
+      {/* Page Header */}
+      <PageHeader
+        title="Purchasing & Stock In"
+        subtitle="Manage supplier purchase orders, stock-in receipt confirmations, and cost records."
+        actions={
+          <Button
+            variant="primary"
+            size="md"
             onClick={openCreateModal}
-            style={{
-              backgroundColor: "#2563eb",
-              color: "#ffffff",
-              padding: "0.625rem 1.25rem",
-              borderRadius: "0.5rem",
-              fontWeight: "600",
-              fontSize: "0.875rem",
-              border: "none",
-              cursor: "pointer",
-              boxShadow: "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
           >
-            <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>+</span> New Purchase
-          </button>
+            + Create Purchase Order
+          </Button>
+        }
+      />
+
+      {/* Filters Bar */}
+      <div
+        style={{
+          backgroundColor: "var(--color-surface)",
+          padding: "16px 20px",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-border)",
+          display: "flex",
+          gap: "14px",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: "220px" }}>
+          <input
+            type="text"
+            placeholder="Search PO #, supplier, reference..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            style={{
+              width: "100%",
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
         </div>
 
-        {/* Filter and Search Bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="purchase-status-filter" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            Status:
+          </label>
+          <select
+            id="purchase-status-filter"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            style={{
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="DRAFT">Draft</option>
+            <option value="RECEIVED">Received</option>
+            <option value="CANCELLED">Cancelled</option>
+          </select>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="purchase-start-date" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            From:
+          </label>
+          <input
+            id="purchase-start-date"
+            type="date"
+            value={startDate}
+            onChange={(e) => {
+              setStartDate(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            style={{
+              height: "38px",
+              padding: "0 10px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="purchase-end-date" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            To:
+          </label>
+          <input
+            id="purchase-end-date"
+            type="date"
+            value={endDate}
+            onChange={(e) => {
+              setEndDate(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            style={{
+              height: "38px",
+              padding: "0 10px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
         <div
+          role="alert"
           style={{
-            backgroundColor: "#ffffff",
-            padding: "1.25rem",
-            borderRadius: "0.75rem",
-            boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05)",
-            border: "1px solid #e2e8f0",
-            marginBottom: "1.5rem",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "1rem",
-            alignItems: "center",
-            justifyContent: "space-between",
+            padding: "12px 16px",
+            backgroundColor: "var(--color-danger-soft)",
+            border: "1px solid var(--color-danger)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-danger)",
+            fontSize: "13px",
+            fontWeight: 500,
           }}
         >
-          {/* Status Tabs */}
-          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            {["ALL", "DRAFT", "RECEIVED", "CANCELLED"].map((st) => (
-              <button
-                key={st}
-                onClick={() => {
-                  setStatusFilter(st);
-                  setPagination((prev) => ({ ...prev, page: 1 }));
-                }}
-                style={{
-                  padding: "0.45rem 0.9rem",
-                  borderRadius: "0.375rem",
-                  fontSize: "0.85rem",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  border: "none",
-                  backgroundColor: statusFilter === st ? "#2563eb" : "#f1f5f9",
-                  color: statusFilter === st ? "#ffffff" : "#475569",
-                  transition: "all 0.15s ease",
-                }}
-              >
-                {st}
-              </button>
-            ))}
-          </div>
-
-          {/* Search and Date Controls */}
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-            <input
-              type="text"
-              placeholder="Search ref # or supplier..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                padding: "0.5rem 0.85rem",
-                borderRadius: "0.375rem",
-                border: "1px solid #cbd5e1",
-                fontSize: "0.875rem",
-                outline: "none",
-                minWidth: "220px",
-              }}
-            />
-
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => {
-                setStartDate(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              title="Start Date"
-              style={{
-                padding: "0.5rem 0.85rem",
-                borderRadius: "0.375rem",
-                border: "1px solid #cbd5e1",
-                fontSize: "0.875rem",
-                outline: "none",
-              }}
-            />
-
-            <input
-              type="date"
-              value={endDate}
-              onChange={(e) => {
-                setEndDate(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              title="End Date"
-              style={{
-                padding: "0.5rem 0.85rem",
-                borderRadius: "0.375rem",
-                border: "1px solid #cbd5e1",
-                fontSize: "0.875rem",
-                outline: "none",
-              }}
-            />
-          </div>
+          ⚠️ {error}
         </div>
+      )}
 
-        {/* Content Section */}
-        {error && (
+      {/* Purchases Table */}
+      <DataTable
+        columns={columns}
+        data={purchases}
+        loading={loading}
+        emptyTitle="No purchase records found"
+        emptyMessage="There are no purchase orders matching your search or date criteria."
+        emptyAction={
+          <Button variant="primary" size="sm" onClick={openCreateModal}>
+            + Create First Purchase Order
+          </Button>
+        }
+      />
+
+      {/* Pagination */}
+      {!loading && purchases.length > 0 && pagination.pages > 1 && (
+        <Pagination
+          currentPage={pagination.page}
+          totalPages={pagination.pages}
+          totalItems={pagination.total}
+          onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
+        />
+      )}
+
+      {/* Create Purchase Order Modal */}
+      <Modal
+        isOpen={isCreateModalOpen}
+        onClose={closeCreateModal}
+        title="Create Purchase Order"
+        maxWidth="740px"
+      >
+        {createError && (
           <div
+            role="alert"
             style={{
-              padding: "1rem",
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "0.5rem",
-              color: "#991b1b",
-              marginBottom: "1.5rem",
-              fontSize: "0.9rem",
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
             }}
           >
-            {error}
+            {createError}
           </div>
         )}
 
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "0.75rem",
-            boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05)",
-            border: "1px solid #e2e8f0",
-            overflow: "hidden",
-          }}
-        >
-          {loading ? (
-            <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
-              Loading purchase records...
-            </div>
-          ) : purchases.length === 0 ? (
-            <div style={{ padding: "3.5rem 1rem", textAlign: "center" }}>
-              <p style={{ fontSize: "1.1rem", fontWeight: "600", color: "#334155", margin: 0 }}>
-                No purchase orders found.
-              </p>
-              <p style={{ color: "#64748b", margin: "0.5rem 0 1.25rem", fontSize: "0.9rem" }}>
-                {search || statusFilter !== "ALL" || startDate || endDate
-                  ? "Try adjusting your search criteria or date filters."
-                  : "Get started by recording your first purchase order."}
-              </p>
-              {!search && statusFilter === "ALL" && (
-                <button
-                  onClick={openCreateModal}
-                  style={{
-                    backgroundColor: "#2563eb",
-                    color: "#ffffff",
-                    padding: "0.5rem 1.25rem",
-                    borderRadius: "0.375rem",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  Create Purchase
-                </button>
-              )}
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                <thead>
-                  <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>
-                      Reference #
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>
-                      Date
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>
-                      Supplier
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>
-                      Status
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>
-                      Items
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase", textAlign: "right" }}>
-                      Total Amount
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase", textAlign: "right" }}>
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody style={{ divideY: "1px solid #f1f5f9" }}>
-                  {purchases.map((p) => (
-                    <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9", transition: "background 0.15s" }}>
-                      <td style={{ padding: "0.85rem 1.25rem", fontWeight: "600", fontSize: "0.875rem" }}>
-                        <Link
-                          to={`/purchases/${p.id}`}
-                          style={{ color: "#2563eb", textDecoration: "none" }}
-                          onMouseOver={(e) => (e.target.style.textDecoration = "underline")}
-                          onMouseOut={(e) => (e.target.style.textDecoration = "none")}
-                        >
-                          {p.reference_number}
-                        </Link>
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.875rem", color: "#475569" }}>
-                        {p.purchase_date}
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.875rem", color: "#0f172a", fontWeight: "500" }}>
-                        {p.supplier?.name || "—"}
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem" }}>
-                        <span
-                          style={{
-                            display: "inline-block",
-                            padding: "0.2rem 0.55rem",
-                            borderRadius: "9999px",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            ...getStatusBadgeStyle(p.status),
-                          }}
-                        >
-                          {p.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.875rem", color: "#475569" }}>
-                        {p.item_count} items
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.9rem", fontWeight: "700", color: "#0f172a", textAlign: "right" }}>
-                        ₱{parseFloat(p.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", gap: "0.5rem", alignItems: "center" }}>
-                          <Link
-                            to={`/purchases/${p.id}`}
-                            style={{
-                              padding: "0.35rem 0.65rem",
-                              backgroundColor: "#f1f5f9",
-                              color: "#334155",
-                              borderRadius: "0.375rem",
-                              fontSize: "0.8rem",
-                              fontWeight: "600",
-                              textDecoration: "none",
-                            }}
-                          >
-                            Details
-                          </Link>
-
-                          {p.status === "DRAFT" && (
-                            <>
-                              <button
-                                onClick={() => openConfirmModal("RECEIVE", p)}
-                                title="Receive stock into inventory"
-                                style={{
-                                  padding: "0.35rem 0.65rem",
-                                  backgroundColor: "#10b981",
-                                  color: "#ffffff",
-                                  border: "none",
-                                  borderRadius: "0.375rem",
-                                  fontSize: "0.8rem",
-                                  fontWeight: "600",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Receive
-                              </button>
-
-                              <button
-                                onClick={() => openConfirmModal("CANCEL", p)}
-                                title="Cancel purchase"
-                                style={{
-                                  padding: "0.35rem 0.65rem",
-                                  backgroundColor: "#f1f5f9",
-                                  color: "#dc2626",
-                                  border: "none",
-                                  borderRadius: "0.375rem",
-                                  fontSize: "0.8rem",
-                                  fontWeight: "600",
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Cancel
-                              </button>
-
-                              {isOwner && (
-                                <button
-                                  onClick={() => openConfirmModal("DELETE", p)}
-                                  title="Delete draft purchase"
-                                  style={{
-                                    padding: "0.35rem 0.65rem",
-                                    backgroundColor: "#fee2e2",
-                                    color: "#991b1b",
-                                    border: "none",
-                                    borderRadius: "0.375rem",
-                                    fontSize: "0.8rem",
-                                    fontWeight: "600",
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {!loading && purchases.length > 0 && pagination.pages > 1 && (
-            <div
-              style={{
-                padding: "0.85rem 1.25rem",
-                borderTop: "1px solid #e2e8f0",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                fontSize: "0.875rem",
-                color: "#64748b",
-              }}
-            >
-              <div>
-                Page {pagination.page} of {pagination.pages} ({pagination.total} total)
-              </div>
-              <div style={{ display: "flex", gap: "0.5rem" }}>
-                <button
-                  disabled={pagination.page <= 1}
-                  onClick={() => setPagination((prev) => ({ ...prev, page: prev.page - 1 }))}
-                  style={{
-                    padding: "0.35rem 0.75rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #cbd5e1",
-                    backgroundColor: pagination.page <= 1 ? "#f8fafc" : "#ffffff",
-                    color: pagination.page <= 1 ? "#94a3b8" : "#334155",
-                    cursor: pagination.page <= 1 ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Previous
-                </button>
-                <button
-                  disabled={pagination.page >= pagination.pages}
-                  onClick={() => setPagination((prev) => ({ ...prev, page: prev.page + 1 }))}
-                  style={{
-                    padding: "0.35rem 0.75rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #cbd5e1",
-                    backgroundColor: pagination.page >= pagination.pages ? "#f8fafc" : "#ffffff",
-                    color: pagination.page >= pagination.pages ? "#94a3b8" : "#334155",
-                    cursor: pagination.page >= pagination.pages ? "not-allowed" : "pointer",
-                  }}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      </main>
-
-      {/* New Purchase Modal */}
-      {isCreateModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.6)",
-            backdropFilter: "blur(4px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "0.75rem",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-              maxWidth: "760px",
-              width: "100%",
-              maxHeight: "90vh",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            {/* Modal Header */}
-            <div
-              style={{
-                padding: "1.25rem 1.5rem",
-                borderBottom: "1px solid #e2e8f0",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "700", color: "#0f172a" }}>
-                Create Purchase Order
-              </h2>
-              <button
-                onClick={closeCreateModal}
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  fontSize: "1.5rem",
-                  color: "#94a3b8",
-                  cursor: "pointer",
-                  lineHeight: 1,
-                }}
+        <form onSubmit={handleCreateSubmit}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <FormField label="Supplier" required>
+              <Select
+                value={createForm.supplier_id}
+                onChange={(e) => setCreateForm({ ...createForm, supplier_id: e.target.value })}
+                required
               >
-                ×
-              </button>
+                <option value="">-- Select Supplier --</option>
+                {suppliersList.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            <FormField label="Purchase Date" required>
+              <Input
+                type="date"
+                value={createForm.purchase_date}
+                onChange={(e) => setCreateForm({ ...createForm, purchase_date: e.target.value })}
+                required
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Supplier Invoice / Reference # (Optional)">
+            <Input
+              placeholder="e.g. INV-SUPP-8821"
+              value={createForm.reference_number}
+              onChange={(e) => setCreateForm({ ...createForm, reference_number: e.target.value })}
+            />
+          </FormField>
+
+          {/* Line Items Section */}
+          <div style={{ marginTop: "16px", marginBottom: "16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+              <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text)" }}>
+                Order Line Items
+              </span>
+              <Button variant="secondary" size="sm" onClick={handleAddItemRow}>
+                + Add Product Line
+              </Button>
             </div>
 
-            {/* Modal Body */}
-            <form onSubmit={handleCreateSubmit} style={{ overflowY: "auto", padding: "1.5rem" }}>
-              {createError && (
-                <div
-                  style={{
-                    padding: "0.75rem 1rem",
-                    backgroundColor: "#fef2f2",
-                    border: "1px solid #fecaca",
-                    borderRadius: "0.375rem",
-                    color: "#991b1b",
-                    fontSize: "0.875rem",
-                    marginBottom: "1rem",
-                  }}
-                >
-                  {createError}
-                </div>
-              )}
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                    Supplier *
-                  </label>
-                  <select
-                    value={createForm.supplier_id}
-                    onChange={(e) => setCreateForm({ ...createForm, supplier_id: e.target.value })}
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "0.55rem 0.75rem",
-                      borderRadius: "0.375rem",
-                      border: "1px solid #cbd5e1",
-                      fontSize: "0.875rem",
-                      backgroundColor: "#ffffff",
-                    }}
-                  >
-                    <option value="">-- Select Supplier --</option>
-                    {suppliersList.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                    Purchase Date *
-                  </label>
-                  <input
-                    type="date"
-                    value={createForm.purchase_date}
-                    onChange={(e) => setCreateForm({ ...createForm, purchase_date: e.target.value })}
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "0.55rem 0.75rem",
-                      borderRadius: "0.375rem",
-                      border: "1px solid #cbd5e1",
-                      fontSize: "0.875rem",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
+            {createForm.items.length === 0 ? (
+              <div style={{ padding: "24px", textAlign: "center", backgroundColor: "var(--color-bg)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", fontSize: "13px" }}>
+                No items added yet. Click &quot;+ Add Product Line&quot; to begin building your order.
               </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                {createForm.items.map((item, idx) => {
+                  const lineSubtotal = (parseFloat(item.quantity) || 0) * (parseFloat(item.unit_cost) || 0);
 
-              <div style={{ marginBottom: "1.25rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                  Reference Number (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. PUR-20260908-0001 (leave blank for auto-generation)"
-                  value={createForm.reference_number}
-                  onChange={(e) => setCreateForm({ ...createForm, reference_number: e.target.value })}
-                  style={{
-                    width: "100%",
-                    padding: "0.55rem 0.75rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #cbd5e1",
-                    fontSize: "0.875rem",
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              {/* Line Items Section */}
-              <div style={{ borderTop: "1px solid #e2e8f0", paddingTop: "1rem", marginBottom: "1rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-                  <h3 style={{ margin: 0, fontSize: "0.95rem", fontWeight: "700", color: "#0f172a" }}>
-                    Line Items
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={handleAddItemRow}
-                    style={{
-                      backgroundColor: "#f1f5f9",
-                      color: "#2563eb",
-                      border: "1px solid #bfdbfe",
-                      padding: "0.35rem 0.75rem",
-                      borderRadius: "0.375rem",
-                      fontSize: "0.8rem",
-                      fontWeight: "600",
-                      cursor: "pointer",
-                    }}
-                  >
-                    + Add Product
-                  </button>
-                </div>
-
-                {createForm.items.length === 0 ? (
-                  <p style={{ color: "#94a3b8", fontSize: "0.85rem", fontStyle: "italic", margin: "0.5rem 0" }}>
-                    No line items added yet. You can add items now or later in draft mode.
-                  </p>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
-                    {createForm.items.map((it, idx) => {
-                      const lineSubtotal = (parseFloat(it.quantity) || 0) * (parseFloat(it.unit_cost) || 0);
-                      return (
-                        <div
-                          key={idx}
+                  return (
+                    <div
+                      key={idx}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "2fr 1fr 1fr 1fr auto",
+                        gap: "10px",
+                        alignItems: "center",
+                        backgroundColor: "var(--color-bg)",
+                        padding: "10px 12px",
+                        borderRadius: "var(--radius-md)",
+                      }}
+                    >
+                      <div>
+                        <select
+                          value={item.product_id}
+                          onChange={(e) => handleItemFieldChange(idx, "product_id", e.target.value)}
+                          required
                           style={{
-                            display: "grid",
-                            gridTemplateColumns: "3fr 1.2fr 1.5fr 1.5fr auto",
-                            gap: "0.5rem",
-                            alignItems: "center",
-                            backgroundColor: "#f8fafc",
-                            padding: "0.5rem 0.75rem",
-                            borderRadius: "0.375rem",
-                            border: "1px solid #e2e8f0",
+                            width: "100%",
+                            height: "36px",
+                            padding: "0 8px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--color-border)",
+                            fontSize: "13px",
+                            backgroundColor: "var(--color-surface)",
                           }}
                         >
-                          <div>
-                            <select
-                              value={it.product_id}
-                              onChange={(e) => handleItemFieldChange(idx, "product_id", e.target.value)}
-                              style={{ width: "100%", padding: "0.35rem", fontSize: "0.8rem", borderRadius: "0.25rem", border: "1px solid #cbd5e1" }}
-                            >
-                              {productsList.map((prod) => (
-                                <option key={prod.id} value={prod.id}>
-                                  {prod.name} ({prod.sku})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
+                          {productsList.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.sku})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                          <div>
-                            <input
-                              type="number"
-                              step="0.001"
-                              min="0.001"
-                              placeholder="Qty"
-                              value={it.quantity}
-                              onChange={(e) => handleItemFieldChange(idx, "quantity", e.target.value)}
-                              style={{ width: "100%", padding: "0.35rem", fontSize: "0.8rem", borderRadius: "0.25rem", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
-                            />
-                          </div>
+                      <div>
+                        <input
+                          type="number"
+                          step="0.001"
+                          min="0.001"
+                          required
+                          placeholder="Qty"
+                          value={item.quantity}
+                          onChange={(e) => handleItemFieldChange(idx, "quantity", e.target.value)}
+                          style={{
+                            width: "100%",
+                            height: "36px",
+                            padding: "0 8px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--color-border)",
+                            fontSize: "13px",
+                            backgroundColor: "var(--color-surface)",
+                          }}
+                        />
+                      </div>
 
-                          <div>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              placeholder="Unit Cost"
-                              value={it.unit_cost}
-                              onChange={(e) => handleItemFieldChange(idx, "unit_cost", e.target.value)}
-                              style={{ width: "100%", padding: "0.35rem", fontSize: "0.8rem", borderRadius: "0.25rem", border: "1px solid #cbd5e1", boxSizing: "border-box" }}
-                            />
-                          </div>
+                      <div>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          required
+                          placeholder="Unit Cost"
+                          value={item.unit_cost}
+                          onChange={(e) => handleItemFieldChange(idx, "unit_cost", e.target.value)}
+                          style={{
+                            width: "100%",
+                            height: "36px",
+                            padding: "0 8px",
+                            borderRadius: "var(--radius-md)",
+                            border: "1px solid var(--color-border)",
+                            fontSize: "13px",
+                            backgroundColor: "var(--color-surface)",
+                          }}
+                        />
+                      </div>
 
-                          <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#0f172a", textAlign: "right" }}>
-                            ₱{lineSubtotal.toFixed(2)}
-                          </div>
+                      <div style={{ textAlign: "right", fontFamily: "var(--font-mono)", fontSize: "13px", fontWeight: 600 }}>
+                        ₱{lineSubtotal.toFixed(2)}
+                      </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItemRow(idx)}
-                            style={{
-                              background: "none",
-                              border: "none",
-                              color: "#ef4444",
-                              fontSize: "1.1rem",
-                              cursor: "pointer",
-                              padding: "0.2rem 0.4rem",
-                            }}
-                          >
-                            ×
-                          </button>
-                        </div>
-                      );
-                    })}
-
-                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "1rem", marginTop: "0.5rem" }}>
-                      <span style={{ fontSize: "0.875rem", color: "#64748b" }}>Order Total:</span>
-                      <span style={{ fontSize: "1.1rem", fontWeight: "700", color: "#0f172a" }}>
-                        ₱{computeModalTotal().toFixed(2)}
-                      </span>
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItemRow(idx)}
+                          style={{
+                            backgroundColor: "transparent",
+                            border: "none",
+                            color: "var(--color-danger)",
+                            cursor: "pointer",
+                            padding: "4px",
+                            fontSize: "16px",
+                            lineHeight: 1,
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })}
               </div>
+            )}
 
-              {/* Modal Footer */}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "flex-end",
-                  gap: "0.75rem",
-                  borderTop: "1px solid #e2e8f0",
-                  paddingTop: "1rem",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={closeCreateModal}
-                  disabled={creating}
-                  style={{
-                    padding: "0.55rem 1rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #cbd5e1",
-                    backgroundColor: "#ffffff",
-                    color: "#475569",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating}
-                  style={{
-                    padding: "0.55rem 1.25rem",
-                    borderRadius: "0.375rem",
-                    border: "none",
-                    backgroundColor: "#2563eb",
-                    color: "#ffffff",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    cursor: creating ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {creating ? "Saving..." : "Create Purchase"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Confirmation Action Modal */}
-      {confirmModal.isOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.6)",
-            backdropFilter: "blur(4px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 60,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-              maxWidth: "460px",
-              width: "100%",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <h3 style={{ margin: "0 0 0.5rem", fontSize: "1.15rem", fontWeight: "700", color: "#0f172a" }}>
-              {confirmModal.type === "RECEIVE" && "Confirm Goods Receipt"}
-              {confirmModal.type === "CANCEL" && "Cancel Purchase Order"}
-              {confirmModal.type === "DELETE" && "Delete Draft Purchase"}
-            </h3>
-
-            <p style={{ margin: "0 0 1.25rem", fontSize: "0.875rem", color: "#475569", lineHeight: 1.5 }}>
-              {confirmModal.type === "RECEIVE" && (
-                <>
-                  Are you sure you want to receive purchase{" "}
-                  <strong>{confirmModal.purchase?.reference_number}</strong>?
-                  <br />
-                  <br />
-                  <span style={{ color: "#059669", fontWeight: "600" }}>
-                    This will permanently add the items to stock and update latest cost prices.
-                  </span>
-                </>
-              )}
-              {confirmModal.type === "CANCEL" && (
-                <>
-                  Are you sure you want to cancel purchase{" "}
-                  <strong>{confirmModal.purchase?.reference_number}</strong>?
-                  This action is terminal and cannot be undone.
-                </>
-              )}
-              {confirmModal.type === "DELETE" && (
-                <>
-                  Are you sure you want to delete draft purchase{" "}
-                  <strong>{confirmModal.purchase?.reference_number}</strong>?
-                  All line items will be removed permanently.
-                </>
-              )}
-            </p>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-              <button
-                type="button"
-                onClick={closeConfirmModal}
-                disabled={confirmModal.loading}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "0.375rem",
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#ffffff",
-                  color: "#475569",
-                  fontWeight: "600",
-                  fontSize: "0.875rem",
-                  cursor: "pointer",
-                }}
-              >
-                Back
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmAction}
-                disabled={confirmModal.loading}
-                style={{
-                  padding: "0.5rem 1.25rem",
-                  borderRadius: "0.375rem",
-                  border: "none",
-                  backgroundColor:
-                    confirmModal.type === "RECEIVE"
-                      ? "#10b981"
-                      : confirmModal.type === "DELETE"
-                      ? "#dc2626"
-                      : "#64748b",
-                  color: "#ffffff",
-                  fontWeight: "600",
-                  fontSize: "0.875rem",
-                  cursor: confirmModal.loading ? "not-allowed" : "pointer",
-                }}
-              >
-                {confirmModal.loading
-                  ? "Processing..."
-                  : confirmModal.type === "RECEIVE"
-                  ? "Confirm & Receive"
-                  : confirmModal.type === "DELETE"
-                  ? "Delete Purchase"
-                  : "Cancel Purchase"}
-              </button>
+            {/* Total Summary */}
+            <div
+              style={{
+                marginTop: "16px",
+                padding: "12px 16px",
+                backgroundColor: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 600 }}>
+                Estimated Order Total:
+              </span>
+              <strong style={{ fontSize: "18px", fontFamily: "var(--font-mono)", color: "var(--color-primary)" }}>
+                ₱{computeOrderTotal().toFixed(2)}
+              </strong>
             </div>
           </div>
-        </div>
-      )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={closeCreateModal}
+              disabled={creating}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              loading={creating}
+            >
+              {creating ? "Creating PO..." : "Create Purchase Order"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmModal.isOpen}
+        title={
+          confirmModal.type === "RECEIVE"
+            ? "Receive Purchase Order"
+            : confirmModal.type === "CANCEL"
+            ? "Cancel Purchase Order"
+            : "Delete Purchase Order"
+        }
+        message={
+          confirmModal.type === "RECEIVE"
+            ? `Are you sure you want to mark ${confirmModal.purchase?.purchase_number} as RECEIVED? All line item quantities will be permanently added to current inventory balances.`
+            : confirmModal.type === "CANCEL"
+            ? `Are you sure you want to cancel ${confirmModal.purchase?.purchase_number}? This status change is permanent.`
+            : `Are you sure you want to permanently delete draft order ${confirmModal.purchase?.purchase_number}? This cannot be undone.`
+        }
+        confirmLabel={
+          confirmModal.type === "RECEIVE"
+            ? "Confirm Receipt & Stock In"
+            : confirmModal.type === "CANCEL"
+            ? "Cancel PO"
+            : "Delete PO"
+        }
+        variant={confirmModal.type === "RECEIVE" ? "primary" : "danger"}
+        loading={confirmModal.loading}
+        onConfirm={handleExecuteConfirm}
+        onCancel={() => setConfirmModal({ isOpen: false, type: null, purchase: null, loading: false })}
+      />
     </div>
   );
 };

@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import {
   getPurchaseApi,
@@ -12,6 +11,20 @@ import {
   deletePurchaseApi,
 } from "../modules/purchasing/api";
 import { getProductsApi } from "../modules/products/api";
+import {
+  PageHeader,
+  Button,
+  DataTable,
+  StatusBadge,
+  Modal,
+  FormField,
+  Input,
+  Select,
+  ConfirmDialog,
+  Toast,
+  PageLoading,
+  ErrorState,
+} from "../components/common";
 
 export const PurchaseDetailPage = () => {
   const { id } = useParams();
@@ -22,6 +35,7 @@ export const PurchaseDetailPage = () => {
   const [purchase, setPurchase] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Products available to add
@@ -34,7 +48,7 @@ export const PurchaseDetailPage = () => {
   const [adding, setAdding] = useState(false);
 
   // Edit Item Modal
-  const [editItem, setEditItem] = useState(null); // { id, product, quantity, unit_cost }
+  const [editItem, setEditItem] = useState(null);
   const [editForm, setEditForm] = useState({ quantity: "", unit_cost: "" });
   const [editError, setEditError] = useState("");
   const [editing, setEditing] = useState(false);
@@ -98,30 +112,15 @@ export const PurchaseDetailPage = () => {
     setAddForm({
       product_id: available ? String(available.id) : "",
       quantity: "1.000",
-      unit_cost: available && available.cost_price ? String(available.cost_price) : "0.00",
+      unit_cost: available?.cost_price ? String(available.cost_price) : "0.00",
     });
     setAddError("");
     setIsAddModalOpen(true);
   };
 
-  const handleProductSelectChange = (e) => {
-    const pId = e.target.value;
-    const prod = productsList.find((p) => String(p.id) === String(pId));
-    setAddForm((prev) => ({
-      ...prev,
-      product_id: pId,
-      unit_cost: prod && prod.cost_price ? String(prod.cost_price) : prev.unit_cost,
-    }));
-  };
-
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     setAddError("");
-
-    if (!addForm.product_id) {
-      setAddError("Please select a product.");
-      return;
-    }
     const q = parseFloat(addForm.quantity);
     const c = parseFloat(addForm.unit_cost);
     if (isNaN(q) || q <= 0) {
@@ -141,9 +140,10 @@ export const PurchaseDetailPage = () => {
         unit_cost: addForm.unit_cost,
       });
       setIsAddModalOpen(false);
+      setToastMessage({ type: "success", text: "Product line item added." });
       setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      setAddError(err.response?.data?.error?.message || "Failed to add item.");
+      setAddError(err.response?.data?.error?.message || "Failed to add item to purchase.");
     } finally {
       setAdding(false);
     }
@@ -180,6 +180,7 @@ export const PurchaseDetailPage = () => {
         unit_cost: editForm.unit_cost,
       });
       setEditItem(null);
+      setToastMessage({ type: "success", text: "Line item updated." });
       setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
       setEditError(err.response?.data?.error?.message || "Failed to update item.");
@@ -207,10 +208,12 @@ export const PurchaseDetailPage = () => {
     try {
       if (confirmModal.type === "RECEIVE") {
         await receivePurchaseApi(purchase.id);
+        setToastMessage({ type: "success", text: `Purchase ${purchase.purchase_number} marked as RECEIVED. Stock updated!` });
         closeConfirmModal();
         setRefreshTrigger((prev) => prev + 1);
       } else if (confirmModal.type === "CANCEL") {
         await cancelPurchaseApi(purchase.id);
+        setToastMessage({ type: "info", text: `Purchase ${purchase.purchase_number} has been CANCELLED.` });
         closeConfirmModal();
         setRefreshTrigger((prev) => prev + 1);
       } else if (confirmModal.type === "DELETE") {
@@ -219,73 +222,30 @@ export const PurchaseDetailPage = () => {
         navigate("/purchases");
       } else if (confirmModal.type === "REMOVE_ITEM" && confirmModal.item) {
         await removePurchaseItemApi(purchase.id, confirmModal.item.id);
+        setToastMessage({ type: "info", text: "Line item removed." });
         closeConfirmModal();
         setRefreshTrigger((prev) => prev + 1);
       }
     } catch (err) {
-      alert(err.response?.data?.error?.message || `Failed to perform ${confirmModal.type.toLowerCase()} action.`);
+      setToastMessage({
+        type: "error",
+        text: err.response?.data?.error?.message || `Failed to perform ${confirmModal.type.toLowerCase()} action.`,
+      });
       setConfirmModal((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  const getStatusBadgeStyle = (status) => {
-    switch (status) {
-      case "RECEIVED":
-        return { backgroundColor: "#d1fae5", color: "#065f46", border: "1px solid #a7f3d0" };
-      case "CANCELLED":
-        return { backgroundColor: "#fee2e2", color: "#991b1b", border: "1px solid #fecaca" };
-      case "DRAFT":
-      default:
-        return { backgroundColor: "#fef3c7", color: "#92400e", border: "1px solid #fde68a" };
-    }
-  };
-
   if (loading) {
-    return (
-      <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}>
-        <Navbar />
-        <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "3rem 1.5rem", textAlign: "center", color: "#64748b" }}>
-          Loading purchase order details...
-        </main>
-      </div>
-    );
+    return <PageLoading message="Loading purchase order details..." />;
   }
 
   if (error || !purchase) {
     return (
-      <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}>
-        <Navbar />
-        <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "2rem 1.5rem" }}>
-          <div
-            style={{
-              padding: "1.5rem",
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "0.75rem",
-              color: "#991b1b",
-              textAlign: "center",
-            }}
-          >
-            <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.25rem" }}>Unable to Load Purchase</h2>
-            <p style={{ margin: "0 0 1rem" }}>{error || "The requested purchase order was not found."}</p>
-            <Link
-              to="/purchases"
-              style={{
-                display: "inline-block",
-                padding: "0.5rem 1rem",
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-                borderRadius: "0.375rem",
-                textDecoration: "none",
-                fontWeight: "600",
-                fontSize: "0.875rem",
-              }}
-            >
-              ← Back to Purchases
-            </Link>
-          </div>
-        </main>
-      </div>
+      <ErrorState
+        title="Unable to Load Purchase"
+        message={error || "The requested purchase order was not found."}
+        onRetry={() => navigate("/purchases")}
+      />
     );
   }
 
@@ -293,821 +253,438 @@ export const PurchaseDetailPage = () => {
   const items = purchase.items || [];
   const totalQuantity = items.reduce((acc, it) => acc + (parseFloat(it.quantity) || 0), 0);
 
-  return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc" }}>
-      <Navbar />
-
-      <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "2rem 1.5rem" }}>
-        {/* Navigation Breadcrumb & Actions Bar */}
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "1rem",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <Link
-              to="/purchases"
-              style={{
-                color: "#64748b",
-                textDecoration: "none",
-                fontSize: "0.9rem",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "0.25rem",
-              }}
-            >
-              ← Purchases
-            </Link>
-            <span style={{ color: "#cbd5e1" }}>/</span>
-            <span style={{ color: "#0f172a", fontWeight: "600", fontSize: "0.9rem" }}>
-              {purchase.reference_number}
-            </span>
+  const columns = [
+    {
+      header: "Product",
+      accessor: (it) => (
+        <div>
+          <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{it.product?.name || `Product #${it.product_id}`}</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-muted)", fontFamily: "var(--font-mono)" }}>
+            SKU: {it.product?.sku || "—"}
           </div>
+        </div>
+      ),
+    },
+    {
+      header: "Unit",
+      accessor: (it) => it.product?.unit || "PCS",
+    },
+    {
+      header: "Quantity",
+      align: "right",
+      accessor: (it) => (
+        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "var(--color-text)" }}>
+          {parseFloat(it.quantity).toFixed(3)}
+        </span>
+      ),
+    },
+    {
+      header: "Unit Cost",
+      align: "right",
+      accessor: (it) => (
+        <span style={{ fontFamily: "var(--font-mono)", color: "var(--color-text)" }}>
+          ₱{parseFloat(it.unit_cost).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      ),
+    },
+    {
+      header: "Total Cost",
+      align: "right",
+      accessor: (it) => (
+        <strong style={{ fontFamily: "var(--font-mono)", color: "var(--color-primary)" }}>
+          ₱{parseFloat(it.total_cost).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </strong>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (it) =>
+        isDraft ? (
+          <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => openEditModal(it)}
+            >
+              Edit
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => openConfirmModal("REMOVE_ITEM", it)}
+            >
+              Remove
+            </Button>
+          </div>
+        ) : (
+          <span style={{ fontSize: "12px", color: "var(--color-text-muted)", fontStyle: "italic" }}>
+            Locked
+          </span>
+        ),
+    },
+  ];
 
-          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Toast */}
+      {toastMessage && (
+        <Toast
+          type={toastMessage.type}
+          message={toastMessage.text}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
+
+      {/* Page Header */}
+      <PageHeader
+        title={
+          <span style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <span>{purchase.purchase_number}</span>
+            <StatusBadge
+              status={purchase.status}
+              variant={purchase.status === "RECEIVED" ? "success" : purchase.status === "DRAFT" ? "warning" : "danger"}
+            />
+          </span>
+        }
+        subtitle={
+          <span>
+            <Link to="/purchases" style={{ color: "var(--color-primary)", textDecoration: "none", fontWeight: 600 }}>
+              ← Purchases
+            </Link>{" "}
+            / PO Details & Stock-In
+          </span>
+        }
+        actions={
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
             {isDraft && (
               <>
-                <button
+                <Button
+                  variant="primary"
+                  size="md"
                   onClick={() => openConfirmModal("RECEIVE")}
-                  style={{
-                    backgroundColor: "#10b981",
-                    color: "#ffffff",
-                    padding: "0.55rem 1.15rem",
-                    borderRadius: "0.5rem",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    border: "none",
-                    cursor: "pointer",
-                    boxShadow: "0 1px 2px 0 rgba(0,0,0,0.05)",
-                  }}
                 >
                   ✓ Receive Stock
-                </button>
-
-                <button
-                  onClick={() => openConfirmModal("CANCEL")}
-                  style={{
-                    backgroundColor: "#ffffff",
-                    color: "#dc2626",
-                    border: "1px solid #fecaca",
-                    padding: "0.55rem 1.15rem",
-                    borderRadius: "0.5rem",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    cursor: "pointer",
-                  }}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={openAddModal}
                 >
-                  Cancel Order
-                </button>
-
+                  + Add Product Line
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => openConfirmModal("CANCEL")}
+                >
+                  Cancel PO
+                </Button>
                 {isOwner && (
-                  <button
+                  <Button
+                    variant="danger"
+                    size="md"
                     onClick={() => openConfirmModal("DELETE")}
-                    style={{
-                      backgroundColor: "#fee2e2",
-                      color: "#991b1b",
-                      border: "none",
-                      padding: "0.55rem 1rem",
-                      borderRadius: "0.5rem",
-                      fontWeight: "600",
-                      fontSize: "0.875rem",
-                      cursor: "pointer",
-                    }}
                   >
-                    Delete
-                  </button>
+                    Delete PO
+                  </Button>
                 )}
               </>
             )}
           </div>
-        </div>
+        }
+      />
 
-        {/* Status Banner */}
-        {purchase.status === "DRAFT" && (
-          <div
-            style={{
-              padding: "0.85rem 1.25rem",
-              backgroundColor: "#fffbeb",
-              border: "1px solid #fde68a",
-              borderRadius: "0.5rem",
-              color: "#92400e",
-              fontSize: "0.875rem",
-              marginBottom: "1.5rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
-            <span style={{ fontWeight: "700" }}>DRAFT ORDER:</span> Line items may be added, updated, or removed. Click "Receive Stock" when the shipment arrives to increment authoritative inventory balances.
-          </div>
-        )}
-
-        {purchase.status === "RECEIVED" && (
-          <div
-            style={{
-              padding: "0.85rem 1.25rem",
-              backgroundColor: "#ecfdf5",
-              border: "1px solid #a7f3d0",
-              borderRadius: "0.5rem",
-              color: "#065f46",
-              fontSize: "0.875rem",
-              marginBottom: "1.5rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
-            <span style={{ fontWeight: "700" }}>ORDER RECEIVED:</span> This purchase is final. Items have been added to inventory stock and product cost prices have been updated.
-          </div>
-        )}
-
-        {purchase.status === "CANCELLED" && (
-          <div
-            style={{
-              padding: "0.85rem 1.25rem",
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "0.5rem",
-              color: "#991b1b",
-              fontSize: "0.875rem",
-              marginBottom: "1.5rem",
-              display: "flex",
-              alignItems: "center",
-              gap: "0.5rem",
-            }}
-          >
-            <span style={{ fontWeight: "700" }}>CANCELLED ORDER:</span> This purchase was cancelled. No stock movements were created and inventory was not affected.
-          </div>
-        )}
-
-        {/* Order Details Header Card */}
+      {/* Metadata Cards Row */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+          gap: "16px",
+        }}
+      >
+        {/* Supplier Info */}
         <div
           style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "0.75rem",
-            padding: "1.5rem",
-            boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05)",
-            border: "1px solid #e2e8f0",
-            marginBottom: "1.5rem",
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: "1.5rem",
+            backgroundColor: "var(--color-surface)",
+            padding: "20px",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--color-border)",
+            boxShadow: "var(--shadow-sm)",
           }}
         >
-          <div>
-            <div style={{ fontSize: "0.75rem", fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>
-              Reference Number
-            </div>
-            <div style={{ fontSize: "1.25rem", fontWeight: "700", color: "#0f172a", marginTop: "0.25rem" }}>
-              {purchase.reference_number}
-            </div>
-            <div style={{ marginTop: "0.5rem" }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  padding: "0.2rem 0.55rem",
-                  borderRadius: "9999px",
-                  fontSize: "0.75rem",
-                  fontWeight: "600",
-                  ...getStatusBadgeStyle(purchase.status),
-                }}
-              >
-                {purchase.status}
-              </span>
-            </div>
+          <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+            Supplier Details
+          </span>
+          <h3 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text)", margin: "8px 0 4px" }}>
+            {purchase.supplier?.name || "—"}
+          </h3>
+          <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+            {purchase.supplier?.contact_person && <div>Contact: {purchase.supplier.contact_person}</div>}
+            {purchase.supplier?.phone && <div>Phone: {purchase.supplier.phone}</div>}
+            {purchase.supplier?.email && <div>Email: {purchase.supplier.email}</div>}
           </div>
+        </div>
 
-          <div>
-            <div style={{ fontSize: "0.75rem", fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>
-              Supplier
-            </div>
-            <div style={{ fontSize: "1.1rem", fontWeight: "600", color: "#0f172a", marginTop: "0.25rem" }}>
-              {purchase.supplier?.name || "Unknown Supplier"}
-            </div>
-            <div style={{ fontSize: "0.85rem", color: "#64748b", marginTop: "0.2rem" }}>
-              {purchase.supplier?.contact_person && `Contact: ${purchase.supplier.contact_person}`}
-              {purchase.supplier?.phone && ` • ${purchase.supplier.phone}`}
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: "0.75rem", fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>
-              Dates & Creator
-            </div>
-            <div style={{ fontSize: "0.95rem", color: "#0f172a", marginTop: "0.25rem" }}>
+        {/* PO Metadata */}
+        <div
+          style={{
+            backgroundColor: "var(--color-surface)",
+            padding: "20px",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--color-border)",
+            boxShadow: "var(--shadow-sm)",
+          }}
+        >
+          <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+            Order Overview
+          </span>
+          <div style={{ marginTop: "8px", fontSize: "13px", lineHeight: 1.8 }}>
+            <div>
               Purchase Date: <strong>{purchase.purchase_date}</strong>
             </div>
-            <div style={{ fontSize: "0.85rem", color: "#64748b", marginTop: "0.2rem" }}>
-              Created by: {purchase.creator ? `${purchase.creator.first_name} ${purchase.creator.last_name}` : "System"}
-            </div>
-          </div>
-
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: "0.75rem", fontWeight: "700", color: "#64748b", textTransform: "uppercase" }}>
-              Total Order Amount
-            </div>
-            <div style={{ fontSize: "1.6rem", fontWeight: "800", color: "#0f172a", marginTop: "0.25rem" }}>
-              ₱{parseFloat(purchase.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div style={{ fontSize: "0.85rem", color: "#64748b", marginTop: "0.2rem" }}>
-              {items.length} line items ({totalQuantity.toFixed(3)} units)
-            </div>
-          </div>
-        </div>
-
-        {/* Line Items Table Card */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "0.75rem",
-            boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05)",
-            border: "1px solid #e2e8f0",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              padding: "1.25rem 1.5rem",
-              borderBottom: "1px solid #e2e8f0",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
             <div>
-              <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: "700", color: "#0f172a" }}>
-                Purchase Line Items
-              </h2>
-              <p style={{ margin: "0.2rem 0 0", fontSize: "0.85rem", color: "#64748b" }}>
-                Individual goods, quantities, and agreed purchase cost.
-              </p>
+              Supplier Ref #: <strong>{purchase.reference_number || "—"}</strong>
             </div>
-
-            {isDraft && (
-              <button
-                onClick={openAddModal}
-                style={{
-                  backgroundColor: "#2563eb",
-                  color: "#ffffff",
-                  padding: "0.45rem 1rem",
-                  borderRadius: "0.375rem",
-                  fontWeight: "600",
-                  fontSize: "0.85rem",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                + Add Item
-              </button>
-            )}
+            <div>
+              Created: <strong>{purchase.created_at ? new Date(purchase.created_at).toLocaleString() : "—"}</strong>
+            </div>
           </div>
-
-          {items.length === 0 ? (
-            <div style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
-              <p style={{ fontSize: "1rem", fontWeight: "600", color: "#334155", margin: 0 }}>
-                No line items in this purchase order.
-              </p>
-              {isDraft && (
-                <button
-                  onClick={openAddModal}
-                  style={{
-                    marginTop: "1rem",
-                    backgroundColor: "#2563eb",
-                    color: "#ffffff",
-                    padding: "0.45rem 1rem",
-                    borderRadius: "0.375rem",
-                    fontWeight: "600",
-                    fontSize: "0.85rem",
-                    border: "none",
-                    cursor: "pointer",
-                  }}
-                >
-                  Add First Item
-                </button>
-              )}
-            </div>
-          ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-                <thead>
-                  <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>
-                      Product / SKU
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase" }}>
-                      Unit
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase", textAlign: "right" }}>
-                      Quantity
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase", textAlign: "right" }}>
-                      Unit Cost
-                    </th>
-                    <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase", textAlign: "right" }}>
-                      Subtotal
-                    </th>
-                    {isDraft && (
-                      <th style={{ padding: "0.85rem 1.25rem", fontSize: "0.75rem", fontWeight: "700", color: "#475569", textTransform: "uppercase", textAlign: "right" }}>
-                        Actions
-                      </th>
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it) => (
-                    <tr key={it.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                      <td style={{ padding: "0.85rem 1.25rem" }}>
-                        <div style={{ fontWeight: "600", fontSize: "0.875rem", color: "#0f172a" }}>
-                          {it.product?.name || `Product ID ${it.product_id}`}
-                        </div>
-                        <div style={{ fontSize: "0.75rem", color: "#64748b", fontFamily: "monospace" }}>
-                          {it.product?.sku}
-                        </div>
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.875rem", color: "#475569" }}>
-                        {it.product?.unit || "piece"}
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.875rem", fontWeight: "600", color: "#0f172a", textAlign: "right" }}>
-                        {it.quantity}
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.875rem", color: "#475569", textAlign: "right" }}>
-                        ₱{parseFloat(it.unit_cost).toFixed(2)}
-                      </td>
-                      <td style={{ padding: "0.85rem 1.25rem", fontSize: "0.9rem", fontWeight: "700", color: "#0f172a", textAlign: "right" }}>
-                        ₱{parseFloat(it.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      {isDraft && (
-                        <td style={{ padding: "0.85rem 1.25rem", textAlign: "right" }}>
-                          <div style={{ display: "inline-flex", gap: "0.5rem" }}>
-                            <button
-                              onClick={() => openEditModal(it)}
-                              style={{
-                                padding: "0.25rem 0.6rem",
-                                backgroundColor: "#f1f5f9",
-                                color: "#334155",
-                                border: "1px solid #cbd5e1",
-                                borderRadius: "0.25rem",
-                                fontSize: "0.75rem",
-                                fontWeight: "600",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => openConfirmModal("REMOVE_ITEM", it)}
-                              style={{
-                                padding: "0.25rem 0.6rem",
-                                backgroundColor: "#fee2e2",
-                                color: "#991b1b",
-                                border: "none",
-                                borderRadius: "0.25rem",
-                                fontSize: "0.75rem",
-                                fontWeight: "600",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr style={{ backgroundColor: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
-                    <td colSpan={2} style={{ padding: "1rem 1.25rem", fontWeight: "700", fontSize: "0.95rem", color: "#0f172a" }}>
-                      Total ({items.length} items)
-                    </td>
-                    <td style={{ padding: "1rem 1.25rem", textAlign: "right", fontWeight: "700", fontSize: "0.95rem", color: "#0f172a" }}>
-                      {totalQuantity.toFixed(3)}
-                    </td>
-                    <td></td>
-                    <td style={{ padding: "1rem 1.25rem", textAlign: "right", fontWeight: "800", fontSize: "1.1rem", color: "#0f172a" }}>
-                      ₱{parseFloat(purchase.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </td>
-                    {isDraft && <td></td>}
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
         </div>
-      </main>
 
-      {/* Add Line Item Modal */}
-      {isAddModalOpen && (
+        {/* Financial Summary */}
         <div
           style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.6)",
-            backdropFilter: "blur(4px)",
+            backgroundColor: "var(--color-surface)",
+            padding: "20px",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--color-border)",
+            boxShadow: "var(--shadow-sm)",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 50,
+            flexDirection: "column",
+            justifyContent: "space-between",
           }}
         >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-              maxWidth: "500px",
-              width: "100%",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <h3 style={{ margin: "0 0 1rem", fontSize: "1.15rem", fontWeight: "700", color: "#0f172a" }}>
-              Add Item to Purchase
-            </h3>
-
-            {addError && (
-              <div
-                style={{
-                  padding: "0.75rem 1rem",
-                  backgroundColor: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  borderRadius: "0.375rem",
-                  color: "#991b1b",
-                  fontSize: "0.85rem",
-                  marginBottom: "1rem",
-                }}
-              >
-                {addError}
-              </div>
-            )}
-
-            <form onSubmit={handleAddSubmit}>
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                  Product *
-                </label>
-                <select
-                  value={addForm.product_id}
-                  onChange={handleProductSelectChange}
-                  required
-                  style={{
-                    width: "100%",
-                    padding: "0.55rem 0.75rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #cbd5e1",
-                    fontSize: "0.875rem",
-                    backgroundColor: "#ffffff",
-                  }}
-                >
-                  <option value="">-- Select Product --</option>
-                  {productsList.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.sku})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                    Quantity *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    value={addForm.quantity}
-                    onChange={(e) => setAddForm({ ...addForm, quantity: e.target.value })}
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "0.55rem 0.75rem",
-                      borderRadius: "0.375rem",
-                      border: "1px solid #cbd5e1",
-                      fontSize: "0.875rem",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                    Unit Cost (₱) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={addForm.unit_cost}
-                    onChange={(e) => setAddForm({ ...addForm, unit_cost: e.target.value })}
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "0.55rem 0.75rem",
-                      borderRadius: "0.375rem",
-                      border: "1px solid #cbd5e1",
-                      fontSize: "0.875rem",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-                <button
-                  type="button"
-                  onClick={() => setIsAddModalOpen(false)}
-                  disabled={adding}
-                  style={{
-                    padding: "0.5rem 1rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #cbd5e1",
-                    backgroundColor: "#ffffff",
-                    color: "#475569",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={adding}
-                  style={{
-                    padding: "0.5rem 1.25rem",
-                    borderRadius: "0.375rem",
-                    border: "none",
-                    backgroundColor: "#2563eb",
-                    color: "#ffffff",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    cursor: adding ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {adding ? "Adding..." : "Add to Purchase"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Line Item Modal */}
-      {editItem && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.6)",
-            backdropFilter: "blur(4px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 50,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-              maxWidth: "460px",
-              width: "100%",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <h3 style={{ margin: "0 0 0.5rem", fontSize: "1.15rem", fontWeight: "700", color: "#0f172a" }}>
-              Edit Line Item
-            </h3>
-            <p style={{ margin: "0 0 1rem", fontSize: "0.85rem", color: "#64748b" }}>
-              {editItem.product?.name} ({editItem.product?.sku})
-            </p>
-
-            {editError && (
-              <div
-                style={{
-                  padding: "0.75rem 1rem",
-                  backgroundColor: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  borderRadius: "0.375rem",
-                  color: "#991b1b",
-                  fontSize: "0.85rem",
-                  marginBottom: "1rem",
-                }}
-              >
-                {editError}
-              </div>
-            )}
-
-            <form onSubmit={handleEditSubmit}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                    Quantity *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.001"
-                    min="0.001"
-                    value={editForm.quantity}
-                    onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "0.55rem 0.75rem",
-                      borderRadius: "0.375rem",
-                      border: "1px solid #cbd5e1",
-                      fontSize: "0.875rem",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
-                    Unit Cost (₱) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={editForm.unit_cost}
-                    onChange={(e) => setEditForm({ ...editForm, unit_cost: e.target.value })}
-                    required
-                    style={{
-                      width: "100%",
-                      padding: "0.55rem 0.75rem",
-                      borderRadius: "0.375rem",
-                      border: "1px solid #cbd5e1",
-                      fontSize: "0.875rem",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-                <button
-                  type="button"
-                  onClick={() => setEditItem(null)}
-                  disabled={editing}
-                  style={{
-                    padding: "0.5rem 1rem",
-                    borderRadius: "0.375rem",
-                    border: "1px solid #cbd5e1",
-                    backgroundColor: "#ffffff",
-                    color: "#475569",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={editing}
-                  style={{
-                    padding: "0.5rem 1.25rem",
-                    borderRadius: "0.375rem",
-                    border: "none",
-                    backgroundColor: "#2563eb",
-                    color: "#ffffff",
-                    fontWeight: "600",
-                    fontSize: "0.875rem",
-                    cursor: editing ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {editing ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Confirmation Modal */}
-      {confirmModal.isOpen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.6)",
-            backdropFilter: "blur(4px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 60,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "0.75rem",
-              padding: "1.5rem",
-              maxWidth: "460px",
-              width: "100%",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <h3 style={{ margin: "0 0 0.5rem", fontSize: "1.15rem", fontWeight: "700", color: "#0f172a" }}>
-              {confirmModal.type === "RECEIVE" && "Confirm Goods Receipt"}
-              {confirmModal.type === "CANCEL" && "Cancel Purchase Order"}
-              {confirmModal.type === "DELETE" && "Delete Draft Purchase"}
-              {confirmModal.type === "REMOVE_ITEM" && "Remove Line Item"}
-            </h3>
-
-            <p style={{ margin: "0 0 1.25rem", fontSize: "0.875rem", color: "#475569", lineHeight: 1.5 }}>
-              {confirmModal.type === "RECEIVE" && (
-                <>
-                  Are you sure you want to receive purchase{" "}
-                  <strong>{purchase.reference_number}</strong>?
-                  <br />
-                  <br />
-                  <span style={{ color: "#059669", fontWeight: "600" }}>
-                    Stock balances will be incremented and product cost prices will be updated to the received unit costs.
-                  </span>
-                </>
-              )}
-              {confirmModal.type === "CANCEL" && (
-                <>
-                  Are you sure you want to cancel purchase <strong>{purchase.reference_number}</strong>?
-                  This action is terminal and cannot be undone.
-                </>
-              )}
-              {confirmModal.type === "DELETE" && (
-                <>
-                  Are you sure you want to delete draft purchase <strong>{purchase.reference_number}</strong>?
-                  This action cannot be undone.
-                </>
-              )}
-              {confirmModal.type === "REMOVE_ITEM" && (
-                <>
-                  Are you sure you want to remove item <strong>{confirmModal.item?.product?.name}</strong> from this order?
-                </>
-              )}
-            </p>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-              <button
-                type="button"
-                onClick={closeConfirmModal}
-                disabled={confirmModal.loading}
-                style={{
-                  padding: "0.5rem 1rem",
-                  borderRadius: "0.375rem",
-                  border: "1px solid #cbd5e1",
-                  backgroundColor: "#ffffff",
-                  color: "#475569",
-                  fontWeight: "600",
-                  fontSize: "0.875rem",
-                  cursor: "pointer",
-                }}
-              >
-                Back
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmAction}
-                disabled={confirmModal.loading}
-                style={{
-                  padding: "0.5rem 1.25rem",
-                  borderRadius: "0.375rem",
-                  border: "none",
-                  backgroundColor:
-                    confirmModal.type === "RECEIVE"
-                      ? "#10b981"
-                      : confirmModal.type === "CANCEL"
-                      ? "#64748b"
-                      : "#dc2626",
-                  color: "#ffffff",
-                  fontWeight: "600",
-                  fontSize: "0.875rem",
-                  cursor: confirmModal.loading ? "not-allowed" : "pointer",
-                }}
-              >
-                {confirmModal.loading
-                  ? "Processing..."
-                  : confirmModal.type === "RECEIVE"
-                  ? "Confirm & Receive"
-                  : confirmModal.type === "CANCEL"
-                  ? "Cancel Order"
-                  : "Delete"}
-              </button>
+          <div>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+              Total Value
+            </span>
+            <div style={{ fontSize: "28px", fontWeight: 800, color: "var(--color-primary)", marginTop: "4px" }}>
+              ₱{parseFloat(purchase.total_amount || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
+          <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginTop: "8px" }}>
+            {items.length} line items ({totalQuantity.toFixed(3)} units)
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Items Table */}
+      <DataTable
+        columns={columns}
+        data={items}
+        emptyTitle="No items in this purchase order"
+        emptyMessage="Click '+ Add Product Line' above to add items to this order."
+      />
+
+      {/* Add Item Modal */}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={() => setIsAddModalOpen(false)}
+        title="Add Product Line Item"
+        maxWidth="500px"
+      >
+        {addError && (
+          <div
+            role="alert"
+            style={{
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
+            }}
+          >
+            {addError}
+          </div>
+        )}
+
+        <form onSubmit={handleAddSubmit}>
+          <FormField label="Product" required>
+            <Select
+              value={addForm.product_id}
+              onChange={(e) => {
+                const pid = e.target.value;
+                const prod = productsList.find((p) => String(p.id) === String(pid));
+                setAddForm({
+                  ...addForm,
+                  product_id: pid,
+                  unit_cost: prod?.cost_price ? String(prod.cost_price) : addForm.unit_cost,
+                });
+              }}
+              required
+            >
+              <option value="">-- Select Product --</option>
+              {productsList.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({p.sku})
+                </option>
+              ))}
+            </Select>
+          </FormField>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <FormField label="Quantity" required>
+              <Input
+                type="number"
+                step="0.001"
+                min="0.001"
+                required
+                value={addForm.quantity}
+                onChange={(e) => setAddForm({ ...addForm, quantity: e.target.value })}
+              />
+            </FormField>
+
+            <FormField label="Unit Cost ($)" required>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={addForm.unit_cost}
+                onChange={(e) => setAddForm({ ...addForm, unit_cost: e.target.value })}
+              />
+            </FormField>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setIsAddModalOpen(false)}
+              disabled={adding}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              loading={adding}
+            >
+              {adding ? "Adding..." : "Add Item"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Edit Item Modal */}
+      <Modal
+        isOpen={Boolean(editItem)}
+        onClose={() => setEditItem(null)}
+        title={editItem ? `Edit Item: ${editItem.product?.name || ""}` : "Edit Item"}
+        maxWidth="460px"
+      >
+        {editError && (
+          <div
+            role="alert"
+            style={{
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
+            }}
+          >
+            {editError}
+          </div>
+        )}
+
+        <form onSubmit={handleEditSubmit}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <FormField label="Quantity" required>
+              <Input
+                type="number"
+                step="0.001"
+                min="0.001"
+                required
+                value={editForm.quantity}
+                onChange={(e) => setEditForm({ ...editForm, quantity: e.target.value })}
+              />
+            </FormField>
+
+            <FormField label="Unit Cost ($)" required>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={editForm.unit_cost}
+                onChange={(e) => setEditForm({ ...editForm, unit_cost: e.target.value })}
+              />
+            </FormField>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setEditItem(null)}
+              disabled={editing}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              loading={editing}
+            >
+              {editing ? "Saving..." : "Update Item"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={confirmModal.isOpen}
+        title={
+          confirmModal.type === "RECEIVE"
+            ? "Receive Purchase Order"
+            : confirmModal.type === "CANCEL"
+            ? "Cancel Purchase Order"
+            : confirmModal.type === "DELETE"
+            ? "Delete Purchase Order"
+            : "Remove Line Item"
+        }
+        message={
+          confirmModal.type === "RECEIVE"
+            ? `Are you sure you want to mark ${purchase.purchase_number} as RECEIVED? All quantities will be immediately added to stock balances.`
+            : confirmModal.type === "CANCEL"
+            ? `Are you sure you want to cancel ${purchase.purchase_number}? This action is irreversible.`
+            : confirmModal.type === "DELETE"
+            ? `Are you sure you want to permanently delete draft purchase ${purchase.purchase_number}?`
+            : `Are you sure you want to remove ${confirmModal.item?.product?.name || "this item"} from the order?`
+        }
+        confirmLabel={
+          confirmModal.type === "RECEIVE"
+            ? "Confirm Receipt & Stock In"
+            : confirmModal.type === "CANCEL"
+            ? "Cancel PO"
+            : confirmModal.type === "DELETE"
+            ? "Delete PO"
+            : "Remove Item"
+        }
+        variant={confirmModal.type === "RECEIVE" ? "primary" : "danger"}
+        loading={confirmModal.loading}
+        onConfirm={handleConfirmAction}
+        onCancel={closeConfirmModal}
+      />
     </div>
   );
 };

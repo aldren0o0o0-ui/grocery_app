@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import { getDashboardOverviewApi } from "../modules/dashboard/api";
+import { PageHeader } from "../components/common/PageHeader";
+import { Button } from "../components/common/Button";
+import { StatusBadge } from "../components/common/StatusBadge";
+import { PageLoading, ErrorState } from "../components/common/FeedbackStates";
 
 export const DashboardPage = () => {
   const { user } = useAuth();
@@ -62,7 +65,10 @@ export const DashboardPage = () => {
   const formatCurrency = (val) => {
     const num = parseFloat(val);
     if (isNaN(num)) return "₱0.00";
-    const absFormatted = Math.abs(num).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const absFormatted = Math.abs(num).toLocaleString("en-PH", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
     return num < 0 ? `-₱${absFormatted}` : `₱${absFormatted}`;
   };
 
@@ -82,792 +88,384 @@ export const DashboardPage = () => {
     }
   };
 
+  const getPageTitle = () => {
+    if (role === "OWNER") return "SME Command Center";
+    if (role === "CASHIER") return "Cashier Operations Hub";
+    return "Operations & Inventory Dashboard";
+  };
+
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        backgroundColor: "#f8fafc",
-        fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
-      }}
-    >
-      <Navbar />
-
-      <main style={{ maxWidth: "1280px", margin: "0 auto", padding: "1.5rem 1.25rem 3rem" }}>
-        {/* Header Bar */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            flexWrap: "wrap",
-            gap: "1rem",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <div>
-            <h1
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Page Header */}
+      <PageHeader
+        title={getPageTitle()}
+        subtitle={
+          <span style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span>
+              Business Date:{" "}
+              <strong style={{ color: "var(--color-text)" }}>
+                {data?.period?.date || new Date().toISOString().split("T")[0]}
+              </strong>
+            </span>
+            <span
               style={{
-                fontSize: "1.75rem",
-                fontWeight: "800",
-                color: "#0f172a",
-                margin: "0 0 0.25rem 0",
-                letterSpacing: "-0.025em",
+                fontSize: "11px",
+                padding: "2px 8px",
+                backgroundColor: "var(--color-bg)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-full)",
+                color: "var(--color-text-secondary)",
+                fontWeight: 600,
               }}
             >
-              {role === "OWNER" && "SME Command Center"}
-              {role === "STAFF" && "Operations & Inventory Dashboard"}
-              {role === "CASHIER" && "Cashier Operations Hub"}
-            </h1>
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-              <span
-                style={{
-                  fontSize: "0.875rem",
-                  color: "#64748b",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.35rem",
-                }}
-              >
-                📅 Business Date:{" "}
-                <strong style={{ color: "#334155" }}>
-                  {data?.period?.date || new Date().toISOString().split("T")[0]}
-                </strong>
-              </span>
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  padding: "0.15rem 0.5rem",
-                  backgroundColor: "#e2e8f0",
-                  color: "#475569",
-                  borderRadius: "9999px",
-                  fontWeight: "600",
-                }}
-              >
-                {data?.period?.timezone || "Asia/Manila"} (PHT)
-              </span>
-              <span
-                style={{
-                  fontSize: "0.75rem",
-                  padding: "0.15rem 0.5rem",
-                  backgroundColor:
-                    role === "OWNER" ? "#fef3c7" : role === "STAFF" ? "#e0e7ff" : "#dcfce7",
-                  color:
-                    role === "OWNER" ? "#92400e" : role === "STAFF" ? "#3730a3" : "#166534",
-                  borderRadius: "9999px",
-                  fontWeight: "700",
-                }}
-              >
-                ROLE: {role}
-              </span>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button
-              onClick={fetchDashboard}
-              disabled={loading}
-              id="btn-refresh-dashboard"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.5rem",
-                padding: "0.5rem 1rem",
-                backgroundColor: "#ffffff",
-                border: "1px solid #cbd5e1",
-                borderRadius: "8px",
-                color: "#334155",
-                fontSize: "0.875rem",
-                fontWeight: "600",
-                cursor: loading ? "not-allowed" : "pointer",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-                transition: "all 0.15s ease",
-              }}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  animation: loading ? "spin 1s linear infinite" : "none",
-                }}
-              >
-                🔄
-              </span>
-              {loading ? "Refreshing..." : "Refresh"}
-            </button>
-          </div>
-        </div>
-
-        {/* Error Banner */}
-        {error && (
-          <div
-            style={{
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              color: "#991b1b",
-              padding: "1rem",
-              borderRadius: "8px",
-              marginBottom: "1.5rem",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
+              {data?.period?.timezone || "Asia/Manila"} (PHT)
+            </span>
+          </span>
+        }
+        actions={
+          <Button
+            id="btn-refresh-dashboard"
+            variant="secondary"
+            size="sm"
+            onClick={fetchDashboard}
+            disabled={loading}
           >
-            <span>⚠️ {error}</span>
-            <button
-              onClick={fetchDashboard}
-              style={{
-                backgroundColor: "#ef4444",
-                color: "#ffffff",
-                border: "none",
-                padding: "0.25rem 0.75rem",
-                borderRadius: "4px",
-                fontSize: "0.8125rem",
-                fontWeight: "600",
-                cursor: "pointer",
-              }}
-            >
-              Retry
-            </button>
-          </div>
-        )}
+            {loading ? "Refreshing..." : "Refresh"}
+          </Button>
+        }
+      />
 
-        {/* Loading Skeleton */}
-        {loading && !data && (
-          <div style={{ padding: "4rem 0", textAlign: "center", color: "#64748b" }}>
-            <div style={{ fontSize: "2rem", marginBottom: "1rem" }}>⏳</div>
-            <p style={{ fontWeight: "600" }}>Loading operational metrics...</p>
-          </div>
-        )}
+      {/* Error State */}
+      {error && (
+        <ErrorState
+          title="Dashboard unavailable"
+          message={error}
+          onRetry={fetchDashboard}
+        />
+      )}
 
-        {/* Content based on Role */}
-        {data && (
-          <>
-            {/* ================================================================= */}
-            {/* 1. OWNER VIEW                                                     */}
-            {/* ================================================================= */}
-            {role === "OWNER" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                {/* Financial KPI Cards */}
+      {/* Loading State */}
+      {loading && !data && (
+        <PageLoading message="Loading operational metrics..." />
+      )}
+
+      {/* Dashboard Content */}
+      {data && (
+        <>
+          {/* ================================================================= */}
+          {/* 1. OWNER VIEW                                                     */}
+          {/* ================================================================= */}
+          {role === "OWNER" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Financial KPI Cards */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <KpiCard
+                  title="Net Sales"
+                  value={formatCurrency(data.sales?.net_sales)}
+                  subtext={`Gross: ${formatCurrency(data.sales?.gross_sales)} - Ref: ${formatCurrency(data.sales?.refunds)}`}
+                  accentColor="var(--color-primary)"
+                  badge="Today"
+                  id="kpi-net-sales"
+                />
+                <KpiCard
+                  title="Transactions"
+                  value={data.sales?.transactions || 0}
+                  subtext="Sales completed today"
+                  accentColor="#3B82F6"
+                  badge="Today"
+                  id="kpi-transactions"
+                />
+                <KpiCard
+                  title="Estimated Gross Profit"
+                  value={formatCurrency(data.profit?.estimated_gross_profit)}
+                  subtext={`Net Sales - COGS (${formatCurrency(data.profit?.net_cogs)})`}
+                  accentColor="var(--color-primary)"
+                  badge="Estimate"
+                  id="kpi-gross-profit"
+                />
+                <KpiCard
+                  title="Estimated Net Profit"
+                  value={formatCurrency(data.profit?.estimated_net_profit)}
+                  subtext={`Gross Profit - Exp (${formatCurrency(data.profit?.operating_expenses)})`}
+                  accentColor={
+                    parseFloat(data.profit?.estimated_net_profit || 0) >= 0
+                      ? "var(--color-primary)"
+                      : "var(--color-danger)"
+                  }
+                  badge="Estimate"
+                  id="kpi-net-profit"
+                />
+                <KpiCard
+                  title="Operating Expenses"
+                  value={formatCurrency(data.profit?.operating_expenses)}
+                  subtext="Business date expenses"
+                  accentColor="var(--color-danger)"
+                  badge="Today"
+                  id="kpi-operating-expenses"
+                />
+              </div>
+
+              {/* Secondary Operational Row */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <OperationalBadgeCard
+                  label="Low Stock Items"
+                  value={data.inventory?.low_stock || 0}
+                  color="var(--color-warning)"
+                  bgColor="var(--color-warning-soft)"
+                  linkTo="/inventory"
+                  id="kpi-low-stock"
+                />
+                <OperationalBadgeCard
+                  label="Out of Stock Items"
+                  value={data.inventory?.out_of_stock || 0}
+                  color="var(--color-danger)"
+                  bgColor="var(--color-danger-soft)"
+                  linkTo="/inventory"
+                  id="kpi-out-of-stock"
+                />
+                <OperationalBadgeCard
+                  label="Active Products"
+                  value={data.inventory?.active_products || 0}
+                  color="#2563eb"
+                  bgColor="#eff6ff"
+                  linkTo="/products"
+                  id="kpi-active-products"
+                />
+                <OperationalBadgeCard
+                  label="Refunds Processed"
+                  value={formatCurrency(data.sales?.refunds)}
+                  color="#9333ea"
+                  bgColor="#faf5ff"
+                  linkTo="/returns"
+                  id="kpi-refunds"
+                />
+              </div>
+
+              {/* Analytics Row: 7-Day Trend + Top Products + Expense Breakdown */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+                  gap: "20px",
+                }}
+              >
+                {/* 7-Day Sales Trend */}
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: "1rem",
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "20px",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-sm)",
                   }}
                 >
-                  <KpiCard
-                    title="Net Sales"
-                    value={formatCurrency(data.sales?.net_sales)}
-                    subtext={`Gross: ${formatCurrency(data.sales?.gross_sales)} - Ref: ${formatCurrency(data.sales?.refunds)}`}
-                    accentColor="#2563eb"
-                    badge="Today"
-                    id="kpi-net-sales"
-                  />
-                  <KpiCard
-                    title="Transactions"
-                    value={data.sales?.transactions || 0}
-                    subtext="Sales completed today"
-                    accentColor="#4f46e5"
-                    badge="Today"
-                    id="kpi-transactions"
-                  />
-                  <KpiCard
-                    title="Estimated Gross Profit"
-                    value={formatCurrency(data.profit?.estimated_gross_profit)}
-                    subtext={`Net Sales - COGS (${formatCurrency(data.profit?.net_cogs)})`}
-                    accentColor="#059669"
-                    badge="Estimate"
-                    id="kpi-gross-profit"
-                  />
-                  <KpiCard
-                    title="Estimated Net Profit"
-                    value={formatCurrency(data.profit?.estimated_net_profit)}
-                    subtext={`Gross Profit - Exp (${formatCurrency(data.profit?.operating_expenses)})`}
-                    accentColor={parseFloat(data.profit?.estimated_net_profit || 0) >= 0 ? "#16a34a" : "#dc2626"}
-                    badge="Estimate"
-                    id="kpi-net-profit"
-                  />
-                  <KpiCard
-                    title="Operating Expenses"
-                    value={formatCurrency(data.profit?.operating_expenses)}
-                    subtext="Business date expenses"
-                    accentColor="#dc2626"
-                    badge="Today"
-                    id="kpi-operating-expenses"
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px" }}>
+                    <div>
+                      <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+                        7-Day Sales Trend
+                      </h2>
+                      <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                        Daily Net Sales (PHT)
+                      </span>
+                    </div>
+                  </div>
+
+                  <SalesTrendBarChart
+                    trend={data.trend || []}
+                    formatCurrency={formatCurrency}
+                    hoveredDay={hoveredTrendDay}
+                    setHoveredDay={setHoveredTrendDay}
                   />
                 </div>
 
-                {/* Secondary Operational Row */}
+                {/* Top Selling Products */}
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-                    gap: "1rem",
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "20px",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-sm)",
                   }}
                 >
-                  <OperationalBadgeCard
-                    label="Low Stock Items"
-                    value={data.inventory?.low_stock || 0}
-                    color="#d97706"
-                    bgColor="#fffbeb"
-                    linkTo="/inventory"
-                    id="kpi-low-stock"
-                  />
-                  <OperationalBadgeCard
-                    label="Out of Stock Items"
-                    value={data.inventory?.out_of_stock || 0}
-                    color="#dc2626"
-                    bgColor="#fef2f2"
-                    linkTo="/inventory"
-                    id="kpi-out-of-stock"
-                  />
-                  <OperationalBadgeCard
-                    label="Active Products"
-                    value={data.inventory?.active_products || 0}
-                    color="#2563eb"
-                    bgColor="#eff6ff"
-                    linkTo="/products"
-                    id="kpi-active-products"
-                  />
-                  <OperationalBadgeCard
-                    label="Refunds Processed"
-                    value={formatCurrency(data.sales?.refunds)}
-                    color="#9333ea"
-                    bgColor="#faf5ff"
-                    linkTo="/returns"
-                    id="kpi-refunds"
-                  />
-                </div>
+                  <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: "0 0 4px" }}>
+                    Top Selling Products
+                  </h2>
+                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                    Ranked by net quantity sold (sales minus returns)
+                  </span>
 
-                {/* Analytics Row: 7-Day Trend + Top Products + Expense Breakdown */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(350px, 1fr))",
-                    gap: "1.25rem",
-                  }}
-                >
-                  {/* 7-Day Sales Trend */}
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "1rem" }}>
-                      <div>
-                        <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: 0 }}>
-                          📈 7-Day Sales Trend
-                        </h2>
-                        <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                          Daily Net Sales (PHT)
-                        </span>
+                  <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {!data.top_products || data.top_products.length === 0 ? (
+                      <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                        No product sales recorded for today.
                       </div>
-                    </div>
+                    ) : (
+                      data.top_products.map((p, idx) => {
+                        const maxQty = parseFloat(data.top_products[0].net_quantity_sold) || 1;
+                        const currentQty = parseFloat(p.net_quantity_sold) || 0;
+                        const pct = Math.min(100, Math.round((currentQty / maxQty) * 100));
 
-                    {/* Chart Visualization */}
-                    <SalesTrendBarChart
-                      trend={data.trend || []}
-                      formatCurrency={formatCurrency}
-                      hoveredDay={hoveredTrendDay}
-                      setHoveredDay={setHoveredTrendDay}
-                    />
-                  </div>
-
-                  {/* Top Selling Products */}
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: "0 0 0.25rem" }}>
-                      🏆 Top Selling Products
-                    </h2>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      Ranked by net quantity sold (sales minus returns)
-                    </span>
-
-                    <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {!data.top_products || data.top_products.length === 0 ? (
-                        <div style={{ padding: "2rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                          No product sales recorded for today.
-                        </div>
-                      ) : (
-                        data.top_products.map((p, idx) => {
-                          const maxQty = parseFloat(data.top_products[0].net_quantity_sold) || 1;
-                          const currentQty = parseFloat(p.net_quantity_sold) || 0;
-                          const pct = Math.min(100, Math.round((currentQty / maxQty) * 100));
-
-                          return (
-                            <div key={p.product_id} style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
-                                <span style={{ fontWeight: "600", color: "#334155" }}>
-                                  #{idx + 1} {p.name}
-                                  <span style={{ color: "#94a3b8", marginLeft: "0.35rem", fontSize: "0.75rem" }}>
-                                    ({p.sku})
-                                  </span>
-                                </span>
-                                <span style={{ fontWeight: "700", color: "#0f172a" }}>
-                                  {formatNumber(p.net_quantity_sold)} {p.unit} ({formatCurrency(p.net_sales)})
-                                </span>
-                              </div>
-                              <div style={{ height: "6px", backgroundColor: "#f1f5f9", borderRadius: "9999px", overflow: "hidden" }}>
-                                <div
-                                  style={{
-                                    height: "100%",
-                                    width: `${pct}%`,
-                                    backgroundColor: idx === 0 ? "#2563eb" : "#60a5fa",
-                                    borderRadius: "9999px",
-                                  }}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Expense Breakdown */}
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: "0 0 0.25rem" }}>
-                      💳 Expense Breakdown
-                    </h2>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      Today&apos;s expenses grouped by category
-                    </span>
-
-                    <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                      {!data.expense_breakdown || data.expense_breakdown.length === 0 ? (
-                        <div style={{ padding: "2rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                          No operating expenses recorded for today.
-                        </div>
-                      ) : (
-                        data.expense_breakdown.map((exp) => (
-                          <div key={exp.category} style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8125rem" }}>
-                              <span style={{ fontWeight: "600", color: "#334155" }}>
-                                {exp.category}
-                              </span>
-                              <span style={{ fontWeight: "700", color: "#dc2626" }}>
-                                {formatCurrency(exp.amount)}{" "}
-                                <span style={{ color: "#64748b", fontWeight: "500", fontSize: "0.75rem" }}>
-                                  ({exp.percentage}%)
+                        return (
+                          <div key={p.product_id} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
+                              <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
+                                #{idx + 1} {p.name}
+                                <span style={{ color: "var(--color-text-muted)", marginLeft: "6px", fontSize: "11px" }}>
+                                  ({p.sku})
                                 </span>
                               </span>
+                              <span style={{ fontWeight: 700, color: "var(--color-text)" }}>
+                                {formatNumber(p.net_quantity_sold)} {p.unit} ({formatCurrency(p.net_sales)})
+                              </span>
                             </div>
-                            <div style={{ height: "6px", backgroundColor: "#f1f5f9", borderRadius: "9999px", overflow: "hidden" }}>
+                            <div style={{ height: "6px", backgroundColor: "var(--color-bg)", borderRadius: "var(--radius-full)", overflow: "hidden" }}>
                               <div
                                 style={{
                                   height: "100%",
-                                  width: `${Math.min(100, parseFloat(exp.percentage) || 0)}%`,
-                                  backgroundColor: "#ef4444",
-                                  borderRadius: "9999px",
+                                  width: `${pct}%`,
+                                  backgroundColor: idx === 0 ? "var(--color-primary)" : "var(--color-primary-soft)",
+                                  borderRadius: "var(--radius-full)",
+                                  transition: "width 0.3s ease",
                                 }}
                               />
                             </div>
                           </div>
-                        ))
-                      )}
-                    </div>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
 
-                {/* Operations Section: Inventory Alerts + Recent Feeds */}
+                {/* Expense Breakdown */}
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(450px, 1fr))",
-                    gap: "1.25rem",
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "20px",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-sm)",
                   }}
                 >
-                  {/* Inventory Alerts Table */}
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                      <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: 0 }}>
-                        🚨 Critical Inventory Alerts
-                      </h2>
-                      <Link
-                        to="/inventory"
-                        style={{ fontSize: "0.8125rem", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}
-                      >
-                        View Inventory →
-                      </Link>
-                    </div>
+                  <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: "0 0 4px" }}>
+                    Expense Breakdown
+                  </h2>
+                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                    Today&apos;s expenses grouped by category
+                  </span>
 
-                    {!data.inventory_alerts || data.inventory_alerts.length === 0 ? (
-                      <div style={{ padding: "2rem 0", textAlign: "center", color: "#10b981", fontSize: "0.875rem" }}>
-                        ✅ All stock levels are healthy! No critical alerts.
+                  <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {!data.expense_breakdown || data.expense_breakdown.length === 0 ? (
+                      <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                        No operating expenses recorded for today.
                       </div>
                     ) : (
-                      <div style={{ overflowX: "auto" }}>
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8125rem" }}>
-                          <thead>
-                            <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", textAlign: "left" }}>
-                              <th style={{ padding: "0.5rem 0.5rem 0.5rem 0" }}>Product</th>
-                              <th style={{ padding: "0.5rem" }}>Stock</th>
-                              <th style={{ padding: "0.5rem" }}>Reorder</th>
-                              <th style={{ padding: "0.5rem 0 0.5rem 0.5rem" }}>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {data.inventory_alerts.map((a) => (
-                              <tr key={a.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                <td style={{ padding: "0.6rem 0.5rem 0.6rem 0" }}>
-                                  <div style={{ fontWeight: "600", color: "#1e293b" }}>{a.name}</div>
-                                  <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>{a.sku}</div>
-                                </td>
-                                <td style={{ padding: "0.6rem 0.5rem", fontWeight: "700", color: "#0f172a" }}>
-                                  {formatNumber(a.stock_quantity)} {a.unit}
-                                </td>
-                                <td style={{ padding: "0.6rem 0.5rem", color: "#64748b" }}>
-                                  {formatNumber(a.reorder_level)} {a.unit}
-                                </td>
-                                <td style={{ padding: "0.6rem 0 0.6rem 0.5rem" }}>
-                                  <span
-                                    style={{
-                                      padding: "0.2rem 0.5rem",
-                                      borderRadius: "9999px",
-                                      fontSize: "0.6875rem",
-                                      fontWeight: "700",
-                                      backgroundColor: a.status === "OUT_OF_STOCK" ? "#fee2e2" : "#fef3c7",
-                                      color: a.status === "OUT_OF_STOCK" ? "#991b1b" : "#92400e",
-                                    }}
-                                  >
-                                    {a.status === "OUT_OF_STOCK" ? "OUT OF STOCK" : "LOW STOCK"}
-                                  </span>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Recent Activity Tabs */}
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                      <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: 0 }}>
-                        🕒 Recent Activity
-                      </h2>
-                      <div style={{ display: "flex", gap: "0.25rem", backgroundColor: "#f1f5f9", padding: "0.2rem", borderRadius: "6px" }}>
-                        <button
-                          onClick={() => setSelectedTab("sales")}
-                          style={{
-                            padding: "0.25rem 0.6rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            backgroundColor: selectedTab === "sales" ? "#ffffff" : "transparent",
-                            color: selectedTab === "sales" ? "#2563eb" : "#64748b",
-                            boxShadow: selectedTab === "sales" ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
-                          }}
-                        >
-                          Sales
-                        </button>
-                        <button
-                          onClick={() => setSelectedTab("returns")}
-                          style={{
-                            padding: "0.25rem 0.6rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            backgroundColor: selectedTab === "returns" ? "#ffffff" : "transparent",
-                            color: selectedTab === "returns" ? "#dc2626" : "#64748b",
-                            boxShadow: selectedTab === "returns" ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
-                          }}
-                        >
-                          Returns
-                        </button>
-                        <button
-                          onClick={() => setSelectedTab("expenses")}
-                          style={{
-                            padding: "0.25rem 0.6rem",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                            backgroundColor: selectedTab === "expenses" ? "#ffffff" : "transparent",
-                            color: selectedTab === "expenses" ? "#9333ea" : "#64748b",
-                            boxShadow: selectedTab === "expenses" ? "0 1px 2px rgba(0,0,0,0.05)" : "none",
-                          }}
-                        >
-                          Expenses
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Tab 1: Sales */}
-                    {selectedTab === "sales" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {!data.recent_sales || data.recent_sales.length === 0 ? (
-                          <div style={{ padding: "2rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                            No recent sales found.
+                      data.expense_breakdown.map((exp) => (
+                        <div key={exp.category} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
+                            <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
+                              {exp.category}
+                            </span>
+                            <span style={{ fontWeight: 700, color: "var(--color-danger)" }}>
+                              {formatCurrency(exp.amount)}{" "}
+                              <span style={{ color: "var(--color-text-secondary)", fontWeight: 500, fontSize: "12px" }}>
+                                ({exp.percentage}%)
+                              </span>
+                            </span>
                           </div>
-                        ) : (
-                          data.recent_sales.map((s) => (
+                          <div style={{ height: "6px", backgroundColor: "var(--color-bg)", borderRadius: "var(--radius-full)", overflow: "hidden" }}>
                             <div
-                              key={s.id}
                               style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "0.5rem 0",
-                                borderBottom: "1px solid #f1f5f9",
-                                fontSize: "0.8125rem",
+                                height: "100%",
+                                width: `${Math.min(100, parseFloat(exp.percentage) || 0)}%`,
+                                backgroundColor: "var(--color-danger)",
+                                borderRadius: "var(--radius-full)",
+                                transition: "width 0.3s ease",
                               }}
-                            >
-                              <div>
-                                <div style={{ fontWeight: "600", color: "#1e293b" }}>{s.invoice_number}</div>
-                                <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                                  {formatTime(s.created_at)} • Cashier: {s.cashier} ({s.item_count} items)
-                                </div>
-                              </div>
-                              <div style={{ textAlign: "right" }}>
-                                <div style={{ fontWeight: "700", color: "#0f172a" }}>{formatCurrency(s.total)}</div>
-                                <span
-                                  style={{
-                                    fontSize: "0.6875rem",
-                                    fontWeight: "600",
-                                    color: s.status === "COMPLETED" ? "#16a34a" : s.status === "RETURNED" ? "#9333ea" : "#dc2626",
-                                  }}
-                                >
-                                  {s.status}
-                                </span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-
-                    {/* Tab 2: Returns */}
-                    {selectedTab === "returns" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {!data.recent_returns || data.recent_returns.length === 0 ? (
-                          <div style={{ padding: "2rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                            No recent returns found.
+                            />
                           </div>
-                        ) : (
-                          data.recent_returns.map((r) => (
-                            <div
-                              key={r.id}
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "0.5rem 0",
-                                borderBottom: "1px solid #f1f5f9",
-                                fontSize: "0.8125rem",
-                              }}
-                            >
-                              <div>
-                                <div style={{ fontWeight: "600", color: "#1e293b" }}>{r.return_number}</div>
-                                <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                                  {formatTime(r.created_at)} • Inv: {r.invoice_number} • By: {r.processed_by}
-                                </div>
-                              </div>
-                              <div style={{ textAlign: "right" }}>
-                                <div style={{ fontWeight: "700", color: "#dc2626" }}>-{formatCurrency(r.refund_amount)}</div>
-                                <span style={{ fontSize: "0.6875rem", fontWeight: "600", color: "#16a34a" }}>COMPLETED</span>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
-
-                    {/* Tab 3: Expenses */}
-                    {selectedTab === "expenses" && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                        {!data.recent_expenses || data.recent_expenses.length === 0 ? (
-                          <div style={{ padding: "2rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                            No recent expenses recorded.
-                          </div>
-                        ) : (
-                          data.recent_expenses.map((e) => (
-                            <div
-                              key={e.id}
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                padding: "0.5rem 0",
-                                borderBottom: "1px solid #f1f5f9",
-                                fontSize: "0.8125rem",
-                              }}
-                            >
-                              <div>
-                                <div style={{ fontWeight: "600", color: "#1e293b" }}>
-                                  {e.category}
-                                  {e.description && <span style={{ fontWeight: "400", color: "#64748b" }}> — {e.description}</span>}
-                                </div>
-                                <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                                  {e.expense_date} • By: {e.recorded_by}
-                                </div>
-                              </div>
-                              <div style={{ textAlign: "right" }}>
-                                <div style={{ fontWeight: "700", color: "#dc2626" }}>{formatCurrency(e.amount)}</div>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
+                        </div>
+                      ))
                     )}
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* ================================================================= */}
-            {/* 2. STAFF VIEW                                                     */}
-            {/* ================================================================= */}
-            {role === "STAFF" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                {/* Operational Counts */}
+              {/* Operations Section: Inventory Alerts + Recent Feeds */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(380px, 1fr))",
+                  gap: "20px",
+                }}
+              >
+                {/* Inventory Alerts Table */}
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    gap: "1rem",
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "20px",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-sm)",
                   }}
                 >
-                  <KpiCard
-                    title="Low Stock Items"
-                    value={data.inventory?.low_stock || 0}
-                    subtext="Requires replenishment order"
-                    accentColor="#d97706"
-                    id="staff-kpi-low-stock"
-                  />
-                  <KpiCard
-                    title="Out of Stock Items"
-                    value={data.inventory?.out_of_stock || 0}
-                    subtext="Urgent stock depleted"
-                    accentColor="#dc2626"
-                    id="staff-kpi-out-of-stock"
-                  />
-                  <KpiCard
-                    title="Active Products"
-                    value={data.inventory?.active_products || 0}
-                    subtext="Catalog items available for sale"
-                    accentColor="#2563eb"
-                    id="staff-kpi-active-products"
-                  />
-                </div>
-
-                {/* Critical Inventory Alerts */}
-                <div
-                  style={{
-                    backgroundColor: "#ffffff",
-                    borderRadius: "12px",
-                    padding: "1.25rem",
-                    border: "1px solid #e2e8f0",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                    <div>
-                      <h2 style={{ fontSize: "1.125rem", fontWeight: "700", color: "#1e293b", margin: 0 }}>
-                        🚨 Critical Stock Alerts
-                      </h2>
-                      <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
-                        Prioritized list of items needing attention
-                      </span>
-                    </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+                      Critical Inventory Alerts
+                    </h2>
                     <Link
                       to="/inventory"
-                      style={{
-                        padding: "0.4rem 0.8rem",
-                        backgroundColor: "#2563eb",
-                        color: "#ffffff",
-                        borderRadius: "6px",
-                        fontSize: "0.8125rem",
-                        fontWeight: "600",
-                        textDecoration: "none",
-                      }}
+                      style={{ fontSize: "13px", color: "var(--color-primary)", fontWeight: 600, textDecoration: "none" }}
                     >
-                      Open Inventory Manager
+                      View Inventory →
                     </Link>
                   </div>
 
                   {!data.inventory_alerts || data.inventory_alerts.length === 0 ? (
-                    <div style={{ padding: "3rem 0", textAlign: "center", color: "#10b981" }}>
-                      ✅ No low stock or out of stock items detected!
+                    <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-success)", fontSize: "13px", fontWeight: 500 }}>
+                      All stock levels are healthy! No critical alerts.
                     </div>
                   ) : (
                     <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                         <thead>
-                          <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", textAlign: "left" }}>
-                            <th style={{ padding: "0.75rem 0.5rem 0.75rem 0" }}>Product Name</th>
-                            <th style={{ padding: "0.75rem 0.5rem" }}>SKU</th>
-                            <th style={{ padding: "0.75rem 0.5rem" }}>Current Stock</th>
-                            <th style={{ padding: "0.75rem 0.5rem" }}>Reorder Level</th>
-                            <th style={{ padding: "0.75rem 0.5rem" }}>Alert Status</th>
+                          <tr style={{ borderBottom: "1px solid var(--color-border)", color: "var(--color-text-secondary)", textAlign: "left" }}>
+                            <th style={{ padding: "8px 8px 8px 0" }}>Product</th>
+                            <th style={{ padding: "8px" }}>Stock</th>
+                            <th style={{ padding: "8px" }}>Reorder</th>
+                            <th style={{ padding: "8px 0 8px 8px" }}>Status</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {data.inventory_alerts.map((item) => (
-                            <tr key={item.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                              <td style={{ padding: "0.75rem 0.5rem 0.75rem 0", fontWeight: "600", color: "#1e293b" }}>
-                                {item.name}
+                          {data.inventory_alerts.map((a) => (
+                            <tr key={a.id} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                              <td style={{ padding: "10px 8px 10px 0" }}>
+                                <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{a.name}</div>
+                                <div style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>{a.sku}</div>
                               </td>
-                              <td style={{ padding: "0.75rem 0.5rem", color: "#64748b" }}>{item.sku}</td>
-                              <td style={{ padding: "0.75rem 0.5rem", fontWeight: "700", color: item.status === "OUT_OF_STOCK" ? "#dc2626" : "#d97706" }}>
-                                {formatNumber(item.stock_quantity)} {item.unit}
+                              <td style={{ padding: "10px 8px", fontWeight: 700, color: "var(--color-text)" }}>
+                                {formatNumber(a.stock_quantity)} {a.unit}
                               </td>
-                              <td style={{ padding: "0.75rem 0.5rem", color: "#64748b" }}>
-                                {formatNumber(item.reorder_level)} {item.unit}
+                              <td style={{ padding: "10px 8px", color: "var(--color-text-secondary)" }}>
+                                {formatNumber(a.reorder_level)} {a.unit}
                               </td>
-                              <td style={{ padding: "0.75rem 0.5rem" }}>
-                                <span
-                                  style={{
-                                    padding: "0.25rem 0.6rem",
-                                    borderRadius: "9999px",
-                                    fontSize: "0.75rem",
-                                    fontWeight: "700",
-                                    backgroundColor: item.status === "OUT_OF_STOCK" ? "#fee2e2" : "#fef3c7",
-                                    color: item.status === "OUT_OF_STOCK" ? "#991b1b" : "#92400e",
-                                  }}
-                                >
-                                  {item.status === "OUT_OF_STOCK" ? "OUT OF STOCK" : "LOW STOCK"}
-                                </span>
+                              <td style={{ padding: "10px 0 10px 8px" }}>
+                                <StatusBadge
+                                  status={a.status === "OUT_OF_STOCK" ? "OUT OF STOCK" : "LOW STOCK"}
+                                  variant={a.status === "OUT_OF_STOCK" ? "danger" : "warning"}
+                                />
                               </td>
                             </tr>
                           ))}
@@ -877,56 +475,156 @@ export const DashboardPage = () => {
                   )}
                 </div>
 
-                {/* Operational Quick Actions & Recent Expenses */}
+                {/* Recent Activity Tabs */}
                 <div
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-                    gap: "1.25rem",
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "20px",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-sm)",
                   }}
                 >
-                  {/* Quick Links */}
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: "0 0 1rem" }}>
-                      ⚡ Operational Shortcuts
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                    <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+                      Recent Activity
                     </h2>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
-                      <QuickLinkButton to="/inventory" title="Manage Inventory" icon="📦" color="#2563eb" />
-                      <QuickLinkButton to="/purchases" title="Purchase Orders" icon="🛒" color="#4f46e5" />
-                      <QuickLinkButton to="/expenses" title="Record Expense" icon="📝" color="#059669" />
-                      <QuickLinkButton to="/suppliers" title="Supplier Directory" icon="🏢" color="#7c3aed" />
+                    <div style={{ display: "flex", gap: "4px", backgroundColor: "var(--color-bg)", padding: "3px", borderRadius: "var(--radius-md)" }}>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTab("sales")}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          border: "none",
+                          borderRadius: "var(--radius-sm)",
+                          cursor: "pointer",
+                          backgroundColor: selectedTab === "sales" ? "var(--color-surface)" : "transparent",
+                          color: selectedTab === "sales" ? "var(--color-primary)" : "var(--color-text-secondary)",
+                          boxShadow: selectedTab === "sales" ? "var(--shadow-sm)" : "none",
+                        }}
+                      >
+                        Sales
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTab("returns")}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          border: "none",
+                          borderRadius: "var(--radius-sm)",
+                          cursor: "pointer",
+                          backgroundColor: selectedTab === "returns" ? "var(--color-surface)" : "transparent",
+                          color: selectedTab === "returns" ? "var(--color-danger)" : "var(--color-text-secondary)",
+                          boxShadow: selectedTab === "returns" ? "var(--shadow-sm)" : "none",
+                        }}
+                      >
+                        Returns
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedTab("expenses")}
+                        style={{
+                          padding: "4px 10px",
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          border: "none",
+                          borderRadius: "var(--radius-sm)",
+                          cursor: "pointer",
+                          backgroundColor: selectedTab === "expenses" ? "var(--color-surface)" : "transparent",
+                          color: selectedTab === "expenses" ? "#9333ea" : "var(--color-text-secondary)",
+                          boxShadow: selectedTab === "expenses" ? "var(--shadow-sm)" : "none",
+                        }}
+                      >
+                        Expenses
+                      </button>
                     </div>
                   </div>
 
-                  {/* Recent Operating Expenses */}
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      borderRadius: "12px",
-                      padding: "1.25rem",
-                      border: "1px solid #e2e8f0",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                    }}
-                  >
-                    <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: "0 0 0.25rem" }}>
-                      📋 Recent Expenses
-                    </h2>
-                    <span style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                      Recently logged store expenses
-                    </span>
+                  {/* Tab 1: Sales */}
+                  {selectedTab === "sales" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {!data.recent_sales || data.recent_sales.length === 0 ? (
+                        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                          No recent sales found.
+                        </div>
+                      ) : (
+                        data.recent_sales.map((s) => (
+                          <div
+                            key={s.id}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "8px 0",
+                              borderBottom: "1px solid var(--color-border-subtle)",
+                              fontSize: "13px",
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{s.invoice_number}</div>
+                              <div style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+                                {formatTime(s.created_at)} • Cashier: {s.cashier} ({s.item_count} items)
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontWeight: 700, color: "var(--color-text)" }}>{formatCurrency(s.total)}</div>
+                              <StatusBadge
+                                status={s.status}
+                                variant={s.status === "COMPLETED" ? "success" : s.status === "RETURNED" ? "purple" : "danger"}
+                              />
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
 
-                    <div style={{ marginTop: "1rem", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                  {/* Tab 2: Returns */}
+                  {selectedTab === "returns" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      {!data.recent_returns || data.recent_returns.length === 0 ? (
+                        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                          No recent returns found.
+                        </div>
+                      ) : (
+                        data.recent_returns.map((r) => (
+                          <div
+                            key={r.id}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "8px 0",
+                              borderBottom: "1px solid var(--color-border-subtle)",
+                              fontSize: "13px",
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{r.return_number}</div>
+                              <div style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+                                {formatTime(r.created_at)} • Inv: {r.invoice_number} • By: {r.processed_by}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontWeight: 700, color: "var(--color-danger)" }}>-{formatCurrency(r.refund_amount)}</div>
+                              <StatusBadge status="COMPLETED" variant="success" />
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* Tab 3: Expenses */}
+                  {selectedTab === "expenses" && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                       {!data.recent_expenses || data.recent_expenses.length === 0 ? (
-                        <div style={{ padding: "2rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                          No expenses recorded yet.
+                        <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                          No recent expenses recorded.
                         </div>
                       ) : (
                         data.recent_expenses.map((e) => (
@@ -935,251 +633,442 @@ export const DashboardPage = () => {
                             style={{
                               display: "flex",
                               justifyContent: "space-between",
-                              padding: "0.5rem 0",
-                              borderBottom: "1px solid #f1f5f9",
-                              fontSize: "0.8125rem",
+                              alignItems: "center",
+                              padding: "8px 0",
+                              borderBottom: "1px solid var(--color-border-subtle)",
+                              fontSize: "13px",
                             }}
                           >
                             <div>
-                              <div style={{ fontWeight: "600", color: "#1e293b" }}>{e.category}</div>
-                              <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                                {e.expense_date} • {e.recorded_by}
+                              <div style={{ fontWeight: 600, color: "var(--color-text)" }}>
+                                {e.category}
+                                {e.description && <span style={{ fontWeight: 400, color: "var(--color-text-secondary)" }}> — {e.description}</span>}
+                              </div>
+                              <div style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+                                {e.expense_date} • By: {e.recorded_by}
                               </div>
                             </div>
-                            <div style={{ fontWeight: "700", color: "#334155" }}>{formatCurrency(e.amount)}</div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontWeight: 700, color: "var(--color-danger)" }}>{formatCurrency(e.amount)}</div>
+                            </div>
                           </div>
                         ))
                       )}
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* ================================================================= */}
-            {/* 3. CASHIER VIEW                                                   */}
-            {/* ================================================================= */}
-            {role === "CASHIER" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-                {/* Cashier Personal KPIs */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                    gap: "1rem",
-                  }}
-                >
-                  <KpiCard
-                    title="My Sales Today"
-                    value={formatCurrency(data.cashier_sales?.today_sales)}
-                    subtext="Transactions processed by you today"
-                    accentColor="#16a34a"
-                    badge="Today"
-                    id="cashier-kpi-today-sales"
-                  />
-                  <KpiCard
-                    title="My Transactions"
-                    value={data.cashier_sales?.transactions || 0}
-                    subtext="Completed checkout sessions"
-                    accentColor="#2563eb"
-                    badge="Count"
-                    id="cashier-kpi-transactions"
-                  />
-                </div>
-
-                {/* Cashier Quick Actions */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                    gap: "1rem",
-                  }}
-                >
-                  <Link
-                    to="/pos"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "1rem",
-                      backgroundColor: "#16a34a",
-                      color: "#ffffff",
-                      padding: "1.25rem",
-                      borderRadius: "12px",
-                      textDecoration: "none",
-                      boxShadow: "0 4px 6px -1px rgba(22, 163, 74, 0.2)",
-                      transition: "transform 0.15s ease",
-                    }}
-                  >
-                    <div style={{ fontSize: "2rem" }}>🛒</div>
-                    <div>
-                      <div style={{ fontSize: "1.125rem", fontWeight: "700" }}>Open POS Terminal</div>
-                      <div style={{ fontSize: "0.8125rem", opacity: 0.9 }}>Process customer checkouts</div>
-                    </div>
-                  </Link>
-
-                  <Link
-                    to="/returns"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "1rem",
-                      backgroundColor: "#dc2626",
-                      color: "#ffffff",
-                      padding: "1.25rem",
-                      borderRadius: "12px",
-                      textDecoration: "none",
-                      boxShadow: "0 4px 6px -1px rgba(220, 38, 38, 0.2)",
-                      transition: "transform 0.15s ease",
-                    }}
-                  >
-                    <div style={{ fontSize: "2rem" }}>↩️</div>
-                    <div>
-                      <div style={{ fontSize: "1.125rem", fontWeight: "700" }}>Process Return / Refund</div>
-                      <div style={{ fontSize: "0.8125rem", opacity: 0.9 }}>Handle customer returns</div>
-                    </div>
-                  </Link>
-
-                  <Link
-                    to="/sales"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "1rem",
-                      backgroundColor: "#2563eb",
-                      color: "#ffffff",
-                      padding: "1.25rem",
-                      borderRadius: "12px",
-                      textDecoration: "none",
-                      boxShadow: "0 4px 6px -1px rgba(37, 99, 235, 0.2)",
-                      transition: "transform 0.15s ease",
-                    }}
-                  >
-                    <div style={{ fontSize: "2rem" }}>📄</div>
-                    <div>
-                      <div style={{ fontSize: "1.125rem", fontWeight: "700" }}>View Sales History</div>
-                      <div style={{ fontSize: "0.8125rem", opacity: 0.9 }}>Inspect past receipts</div>
-                    </div>
-                  </Link>
-                </div>
-
-                {/* My Recent Sales */}
-                <div
-                  style={{
-                    backgroundColor: "#ffffff",
-                    borderRadius: "12px",
-                    padding: "1.25rem",
-                    border: "1px solid #e2e8f0",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                    <h2 style={{ fontSize: "1rem", fontWeight: "700", color: "#1e293b", margin: 0 }}>
-                      🕒 My Recent Checkouts
-                    </h2>
-                    <Link
-                      to="/sales"
-                      style={{ fontSize: "0.8125rem", color: "#2563eb", fontWeight: "600", textDecoration: "none" }}
-                    >
-                      All Sales →
-                    </Link>
-                  </div>
-
-                  {!data.recent_sales || data.recent_sales.length === 0 ? (
-                    <div style={{ padding: "3rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                      No sales processed yet today. Ready for customers!
-                    </div>
-                  ) : (
-                    <div style={{ overflowX: "auto" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
-                        <thead>
-                          <tr style={{ borderBottom: "1px solid #e2e8f0", color: "#64748b", textAlign: "left" }}>
-                            <th style={{ padding: "0.6rem 0.5rem 0.6rem 0" }}>Invoice #</th>
-                            <th style={{ padding: "0.6rem 0.5rem" }}>Time</th>
-                            <th style={{ padding: "0.6rem 0.5rem" }}>Items</th>
-                            <th style={{ padding: "0.6rem 0.5rem" }}>Total</th>
-                            <th style={{ padding: "0.6rem 0 0.6rem 0.5rem" }}>Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {data.recent_sales.map((s) => (
-                            <tr key={s.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                              <td style={{ padding: "0.6rem 0.5rem 0.6rem 0", fontWeight: "600", color: "#1e293b" }}>
-                                {s.invoice_number}
-                              </td>
-                              <td style={{ padding: "0.6rem 0.5rem", color: "#64748b" }}>{formatTime(s.created_at)}</td>
-                              <td style={{ padding: "0.6rem 0.5rem", color: "#64748b" }}>{s.item_count}</td>
-                              <td style={{ padding: "0.6rem 0.5rem", fontWeight: "700", color: "#0f172a" }}>
-                                {formatCurrency(s.total)}
-                              </td>
-                              <td style={{ padding: "0.6rem 0 0.6rem 0.5rem" }}>
-                                <span
-                                  style={{
-                                    padding: "0.2rem 0.5rem",
-                                    borderRadius: "9999px",
-                                    fontSize: "0.6875rem",
-                                    fontWeight: "700",
-                                    backgroundColor: s.status === "COMPLETED" ? "#dcfce7" : "#fee2e2",
-                                    color: s.status === "COMPLETED" ? "#166534" : "#991b1b",
-                                  }}
-                                >
-                                  {s.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
                   )}
                 </div>
               </div>
-            )}
-          </>
-        )}
-      </main>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* 2. STAFF VIEW                                                     */}
+          {/* ================================================================= */}
+          {role === "STAFF" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Operational Counts */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <KpiCard
+                  title="Low Stock Items"
+                  value={data.inventory?.low_stock || 0}
+                  subtext="Requires replenishment order"
+                  accentColor="var(--color-warning)"
+                  id="staff-kpi-low-stock"
+                />
+                <KpiCard
+                  title="Out of Stock Items"
+                  value={data.inventory?.out_of_stock || 0}
+                  subtext="Urgent stock depleted"
+                  accentColor="var(--color-danger)"
+                  id="staff-kpi-out-of-stock"
+                />
+                <KpiCard
+                  title="Active Products"
+                  value={data.inventory?.active_products || 0}
+                  subtext="Catalog items available for sale"
+                  accentColor="#2563eb"
+                  id="staff-kpi-active-products"
+                />
+              </div>
+
+              {/* Critical Inventory Alerts */}
+              <div
+                style={{
+                  backgroundColor: "var(--color-surface)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "20px",
+                  border: "1px solid var(--color-border)",
+                  boxShadow: "var(--shadow-sm)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <div>
+                    <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+                      Critical Stock Alerts
+                    </h2>
+                    <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                      Prioritized list of items needing attention
+                    </span>
+                  </div>
+                  <Link
+                    to="/inventory"
+                    style={{
+                      padding: "6px 12px",
+                      backgroundColor: "var(--color-primary)",
+                      color: "#ffffff",
+                      borderRadius: "var(--radius-md)",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      textDecoration: "none",
+                    }}
+                  >
+                    Open Inventory Manager
+                  </Link>
+                </div>
+
+                {!data.inventory_alerts || data.inventory_alerts.length === 0 ? (
+                  <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-success)", fontWeight: 500 }}>
+                    No low stock or out of stock items detected!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--color-border)", color: "var(--color-text-secondary)", textAlign: "left" }}>
+                          <th style={{ padding: "10px 8px 10px 0" }}>Product Name</th>
+                          <th style={{ padding: "10px 8px" }}>SKU</th>
+                          <th style={{ padding: "10px 8px" }}>Current Stock</th>
+                          <th style={{ padding: "10px 8px" }}>Reorder Level</th>
+                          <th style={{ padding: "10px 8px" }}>Alert Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.inventory_alerts.map((item) => (
+                          <tr key={item.id} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                            <td style={{ padding: "10px 8px 10px 0", fontWeight: 600, color: "var(--color-text)" }}>
+                              {item.name}
+                            </td>
+                            <td style={{ padding: "10px 8px", color: "var(--color-text-secondary)" }}>{item.sku}</td>
+                            <td style={{ padding: "10px 8px", fontWeight: 700, color: item.status === "OUT_OF_STOCK" ? "var(--color-danger)" : "var(--color-warning)" }}>
+                              {formatNumber(item.stock_quantity)} {item.unit}
+                            </td>
+                            <td style={{ padding: "10px 8px", color: "var(--color-text-secondary)" }}>
+                              {formatNumber(item.reorder_level)} {item.unit}
+                            </td>
+                            <td style={{ padding: "10px 8px" }}>
+                              <StatusBadge
+                                status={item.status === "OUT_OF_STOCK" ? "OUT OF STOCK" : "LOW STOCK"}
+                                variant={item.status === "OUT_OF_STOCK" ? "danger" : "warning"}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Operational Quick Actions & Recent Expenses */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                  gap: "20px",
+                }}
+              >
+                {/* Quick Links */}
+                <div
+                  style={{
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "20px",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-sm)",
+                  }}
+                >
+                  <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: "0 0 16px" }}>
+                    Operational Shortcuts
+                  </h2>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                    <QuickLinkButton to="/inventory" title="Manage Inventory" color="var(--color-primary)" />
+                    <QuickLinkButton to="/purchases" title="Purchase Orders" color="#4f46e5" />
+                    <QuickLinkButton to="/expenses" title="Record Expense" color="#059669" />
+                    <QuickLinkButton to="/suppliers" title="Supplier Directory" color="#7c3aed" />
+                  </div>
+                </div>
+
+                {/* Recent Operating Expenses */}
+                <div
+                  style={{
+                    backgroundColor: "var(--color-surface)",
+                    borderRadius: "var(--radius-lg)",
+                    padding: "20px",
+                    border: "1px solid var(--color-border)",
+                    boxShadow: "var(--shadow-sm)",
+                  }}
+                >
+                  <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: "0 0 4px" }}>
+                    Recent Expenses
+                  </h2>
+                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                    Recently logged store expenses
+                  </span>
+
+                  <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {!data.recent_expenses || data.recent_expenses.length === 0 ? (
+                      <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                        No expenses recorded yet.
+                      </div>
+                    ) : (
+                      data.recent_expenses.map((e) => (
+                        <div
+                          key={e.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            padding: "8px 0",
+                            borderBottom: "1px solid var(--color-border-subtle)",
+                            fontSize: "13px",
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{e.category}</div>
+                            <div style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+                              {e.expense_date} • {e.recorded_by}
+                            </div>
+                          </div>
+                          <div style={{ fontWeight: 700, color: "var(--color-text)" }}>{formatCurrency(e.amount)}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* 3. CASHIER VIEW                                                   */}
+          {/* ================================================================= */}
+          {role === "CASHIER" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Cashier Personal KPIs */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <KpiCard
+                  title="My Sales Today"
+                  value={formatCurrency(data.cashier_sales?.today_sales)}
+                  subtext="Transactions processed by you today"
+                  accentColor="var(--color-primary)"
+                  badge="Today"
+                  id="cashier-kpi-today-sales"
+                />
+                <KpiCard
+                  title="My Transactions"
+                  value={data.cashier_sales?.transactions || 0}
+                  subtext="Completed checkout sessions"
+                  accentColor="#2563eb"
+                  badge="Count"
+                  id="cashier-kpi-transactions"
+                />
+              </div>
+
+              {/* Cashier Quick Actions */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                <Link
+                  to="/pos"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                    backgroundColor: "var(--color-primary)",
+                    color: "#ffffff",
+                    padding: "18px 20px",
+                    borderRadius: "var(--radius-lg)",
+                    textDecoration: "none",
+                    boxShadow: "var(--shadow-md)",
+                    transition: "transform 0.15s ease",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "16px", fontWeight: 700 }}>Open POS Terminal</div>
+                    <div style={{ fontSize: "12px", opacity: 0.9 }}>Process customer checkouts</div>
+                  </div>
+                </Link>
+
+                <Link
+                  to="/returns"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                    backgroundColor: "var(--color-surface)",
+                    color: "var(--color-danger)",
+                    border: "1px solid var(--color-danger-soft)",
+                    padding: "18px 20px",
+                    borderRadius: "var(--radius-lg)",
+                    textDecoration: "none",
+                    boxShadow: "var(--shadow-sm)",
+                    transition: "transform 0.15s ease",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-danger)" }}>Process Return / Refund</div>
+                    <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>Handle customer returns</div>
+                  </div>
+                </Link>
+
+                <Link
+                  to="/sales"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "14px",
+                    backgroundColor: "var(--color-surface)",
+                    color: "var(--color-text)",
+                    border: "1px solid var(--color-border)",
+                    padding: "18px 20px",
+                    borderRadius: "var(--radius-lg)",
+                    textDecoration: "none",
+                    boxShadow: "var(--shadow-sm)",
+                    transition: "transform 0.15s ease",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: "16px", fontWeight: 700 }}>View Sales History</div>
+                    <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>Inspect past receipts</div>
+                  </div>
+                </Link>
+              </div>
+
+              {/* My Recent Sales */}
+              <div
+                style={{
+                  backgroundColor: "var(--color-surface)",
+                  borderRadius: "var(--radius-lg)",
+                  padding: "20px",
+                  border: "1px solid var(--color-border)",
+                  boxShadow: "var(--shadow-sm)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+                    My Recent Checkouts
+                  </h2>
+                  <Link
+                    to="/sales"
+                    style={{ fontSize: "13px", color: "var(--color-primary)", fontWeight: 600, textDecoration: "none" }}
+                  >
+                    All Sales →
+                  </Link>
+                </div>
+
+                {!data.recent_sales || data.recent_sales.length === 0 ? (
+                  <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                    No sales processed yet today. Ready for customers!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--color-border)", color: "var(--color-text-secondary)", textAlign: "left" }}>
+                          <th style={{ padding: "10px 8px 10px 0" }}>Invoice #</th>
+                          <th style={{ padding: "10px 8px" }}>Time</th>
+                          <th style={{ padding: "10px 8px" }}>Items</th>
+                          <th style={{ padding: "10px 8px" }}>Total</th>
+                          <th style={{ padding: "10px 0 10px 8px" }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.recent_sales.map((s) => (
+                          <tr key={s.id} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                            <td style={{ padding: "10px 8px 10px 0", fontWeight: 600, color: "var(--color-text)" }}>
+                              {s.invoice_number}
+                            </td>
+                            <td style={{ padding: "10px 8px", color: "var(--color-text-secondary)" }}>{formatTime(s.created_at)}</td>
+                            <td style={{ padding: "10px 8px", color: "var(--color-text-secondary)" }}>{s.item_count}</td>
+                            <td style={{ padding: "10px 8px", fontWeight: 700, color: "var(--color-text)" }}>
+                              {formatCurrency(s.total)}
+                            </td>
+                            <td style={{ padding: "10px 0 10px 8px" }}>
+                              <StatusBadge
+                                status={s.status}
+                                variant={s.status === "COMPLETED" ? "success" : "danger"}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 };
 
 /* Subcomponents */
 
-const KpiCard = ({ title, value, subtext, accentColor = "#2563eb", badge, id }) => (
+const KpiCard = ({ title, value, subtext, accentColor = "var(--color-primary)", badge, id }) => (
   <div
     id={id}
     style={{
-      backgroundColor: "#ffffff",
-      borderRadius: "12px",
-      padding: "1.25rem",
-      border: "1px solid #e2e8f0",
-      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+      backgroundColor: "var(--color-surface)",
+      borderRadius: "var(--radius-lg)",
+      padding: "20px",
+      border: "1px solid var(--color-border)",
+      boxShadow: "var(--shadow-sm)",
       display: "flex",
       flexDirection: "column",
       justifyContent: "space-between",
-      borderTop: `4px solid ${accentColor}`,
+      borderLeft: `4px solid ${accentColor}`,
     }}
   >
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.5rem" }}>
-      <span style={{ fontSize: "0.8125rem", fontWeight: "600", color: "#64748b" }}>{title}</span>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+      <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{title}</span>
       {badge && (
         <span
           style={{
-            fontSize: "0.6875rem",
-            fontWeight: "700",
-            backgroundColor: "#f1f5f9",
-            color: "#475569",
-            padding: "0.1rem 0.4rem",
-            borderRadius: "4px",
+            fontSize: "11px",
+            fontWeight: 700,
+            backgroundColor: "var(--color-bg)",
+            color: "var(--color-text-secondary)",
+            padding: "2px 6px",
+            borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--color-border-subtle)",
           }}
         >
           {badge}
         </span>
       )}
     </div>
-    <div style={{ fontSize: "1.625rem", fontWeight: "800", color: "#0f172a", letterSpacing: "-0.03em" }}>
+    <div style={{ fontSize: "24px", fontWeight: 800, color: "var(--color-text)", letterSpacing: "-0.02em" }}>
       {value}
     </div>
     {subtext && (
-      <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.4rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-muted)", marginTop: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {subtext}
       </div>
     )}
@@ -1191,10 +1080,10 @@ const OperationalBadgeCard = ({ label, value, color, bgColor, linkTo, id }) => (
     to={linkTo}
     id={id}
     style={{
-      backgroundColor: "#ffffff",
-      borderRadius: "10px",
-      padding: "1rem",
-      border: "1px solid #e2e8f0",
+      backgroundColor: "var(--color-surface)",
+      borderRadius: "var(--radius-md)",
+      padding: "16px",
+      border: "1px solid var(--color-border)",
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
@@ -1203,17 +1092,17 @@ const OperationalBadgeCard = ({ label, value, color, bgColor, linkTo, id }) => (
     }}
   >
     <div>
-      <div style={{ fontSize: "0.75rem", fontWeight: "600", color: "#64748b" }}>{label}</div>
-      <div style={{ fontSize: "1.25rem", fontWeight: "800", color: "#0f172a" }}>{value}</div>
+      <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{label}</div>
+      <div style={{ fontSize: "20px", fontWeight: 800, color: "var(--color-text)" }}>{value}</div>
     </div>
     <span
       style={{
         backgroundColor: bgColor,
         color: color,
-        padding: "0.35rem 0.6rem",
-        borderRadius: "8px",
-        fontWeight: "700",
-        fontSize: "0.75rem",
+        padding: "4px 10px",
+        borderRadius: "var(--radius-full)",
+        fontWeight: 700,
+        fontSize: "12px",
       }}
     >
       View →
@@ -1221,49 +1110,46 @@ const OperationalBadgeCard = ({ label, value, color, bgColor, linkTo, id }) => (
   </Link>
 );
 
-const QuickLinkButton = ({ to, title, icon, color }) => (
+const QuickLinkButton = ({ to, title, color }) => (
   <Link
     to={to}
     style={{
       display: "flex",
       alignItems: "center",
-      gap: "0.75rem",
-      padding: "0.85rem",
-      backgroundColor: "#f8fafc",
-      border: "1px solid #e2e8f0",
-      borderRadius: "8px",
+      gap: "10px",
+      padding: "12px 14px",
+      backgroundColor: "var(--color-bg)",
+      border: "1px solid var(--color-border)",
+      borderRadius: "var(--radius-md)",
       textDecoration: "none",
-      color: "#1e293b",
-      fontWeight: "600",
-      fontSize: "0.875rem",
+      color: "var(--color-text)",
+      fontWeight: 600,
+      fontSize: "13px",
       transition: "background-color 0.15s ease",
     }}
   >
-    <span style={{ fontSize: "1.25rem" }}>{icon}</span>
     <span style={{ color }}>{title}</span>
   </Link>
 );
 
 const SalesTrendBarChart = ({ trend, formatCurrency, hoveredDay, setHoveredDay }) => {
   if (!trend || trend.length === 0) {
-    return <div style={{ padding: "2rem 0", textAlign: "center", color: "#94a3b8" }}>No trend data available.</div>;
+    return <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)" }}>No trend data available.</div>;
   }
 
-  // Find max sales value to scale bars
   const maxNet = Math.max(...trend.map((d) => parseFloat(d.net_sales) || 0), 100);
 
   return (
-    <div style={{ position: "relative", marginTop: "1rem" }}>
-      {/* Bar visual container */}
+    <div style={{ position: "relative", marginTop: "16px" }}>
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-end",
           height: "140px",
-          paddingBottom: "1.5rem",
-          borderBottom: "1px solid #e2e8f0",
-          gap: "0.5rem",
+          paddingBottom: "24px",
+          borderBottom: "1px solid var(--color-border)",
+          gap: "8px",
         }}
       >
         {trend.map((day) => {
@@ -1287,25 +1173,27 @@ const SalesTrendBarChart = ({ trend, formatCurrency, hoveredDay, setHoveredDay }
                 position: "relative",
               }}
             >
-              {/* Bar */}
               <div
                 style={{
                   width: "100%",
                   maxWidth: "32px",
                   height: `${heightPct}%`,
-                  backgroundColor: isHovered ? "#1d4ed8" : val > 0 ? "#2563eb" : "#e2e8f0",
+                  backgroundColor: isHovered
+                    ? "var(--color-primary-hover)"
+                    : val > 0
+                    ? "var(--color-primary)"
+                    : "var(--color-border)",
                   borderRadius: "4px 4px 0 0",
                   transition: "all 0.15s ease",
                 }}
               />
-              {/* Day Label */}
               <span
                 style={{
                   position: "absolute",
-                  bottom: "-1.5rem",
-                  fontSize: "0.6875rem",
-                  color: isHovered ? "#1e293b" : "#64748b",
-                  fontWeight: isHovered ? "700" : "500",
+                  bottom: "-20px",
+                  fontSize: "11px",
+                  color: isHovered ? "var(--color-text)" : "var(--color-text-secondary)",
+                  fontWeight: isHovered ? 700 : 500,
                 }}
               >
                 {day.date.slice(5)}
@@ -1315,33 +1203,32 @@ const SalesTrendBarChart = ({ trend, formatCurrency, hoveredDay, setHoveredDay }
         })}
       </div>
 
-      {/* Tooltip detail bar */}
       <div
         style={{
-          marginTop: "1.75rem",
-          minHeight: "2rem",
-          backgroundColor: "#f8fafc",
-          borderRadius: "6px",
-          padding: "0.4rem 0.75rem",
-          fontSize: "0.75rem",
+          marginTop: "24px",
+          minHeight: "32px",
+          backgroundColor: "var(--color-bg)",
+          borderRadius: "var(--radius-md)",
+          padding: "6px 12px",
+          fontSize: "12px",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          color: "#475569",
+          color: "var(--color-text-secondary)",
         }}
       >
         {hoveredDay ? (
           <>
             <span>
               <strong>{hoveredDay.date}</strong>: Net Sales{" "}
-              <strong style={{ color: "#2563eb" }}>{formatCurrency(hoveredDay.net_sales)}</strong>
+              <strong style={{ color: "var(--color-primary)" }}>{formatCurrency(hoveredDay.net_sales)}</strong>
             </span>
             <span>
               (Gross: {formatCurrency(hoveredDay.gross_sales)} | Refunds: {formatCurrency(hoveredDay.refunds)})
             </span>
           </>
         ) : (
-          <span style={{ color: "#94a3b8" }}>Hover over a bar to inspect daily breakdown</span>
+          <span style={{ color: "var(--color-text-muted)" }}>Hover over a bar to inspect daily breakdown</span>
         )}
       </div>
     </div>

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import {
   getInventoryApi,
@@ -7,6 +6,20 @@ import {
   createStockAdjustmentApi,
 } from "../modules/inventory/api";
 import { getCategoriesApi } from "../modules/categories/api";
+import {
+  PageHeader,
+  Button,
+  DataTable,
+  Pagination,
+  StatusBadge,
+  Modal,
+  Drawer,
+  FormField,
+  Input,
+  Select,
+  Textarea,
+  Toast,
+} from "../components/common";
 
 export const InventoryPage = () => {
   const { user } = useAuth();
@@ -20,7 +33,10 @@ export const InventoryPage = () => {
   const [stockStatusFilter, setStockStatusFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [showAnalytics, setShowAnalytics] = useState(true);
+  const [hoveredPoint, setHoveredPoint] = useState(null);
 
   // Adjustment Modal State
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
@@ -49,8 +65,9 @@ export const InventoryPage = () => {
     const fetchCats = async () => {
       try {
         const res = await getCategoriesApi({ is_active: true, per_page: 100 });
-        if (!ignore && res.status === "success") {
-          setCategories(res.data.items || []);
+        if (!ignore) {
+          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          setCategories(items);
         }
       } catch {
         // Ignore category load error silently
@@ -77,12 +94,16 @@ export const InventoryPage = () => {
 
         const res = await getInventoryApi(params);
         if (!ignore) {
-          if (res.status === "success") {
-            setItems(res.data.items || []);
-            setPagination(res.data.pagination || { page: 1, per_page: 10, total: 0, pages: 1 });
-          } else {
-            setError(res.message || "Failed to load inventory.");
-          }
+          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          const pag = res?.data?.pagination || res?.pagination || {
+            page: pagination.page,
+            per_page: 10,
+            total: items.length,
+            pages: 1,
+          };
+          setItems(items);
+          setPagination(pag);
+          setError("");
         }
       } catch (err) {
         if (!ignore) {
@@ -118,12 +139,10 @@ export const InventoryPage = () => {
 
         const res = await getStockMovementsApi(historyProduct.id, params);
         if (!ignore) {
-          if (res.status === "success") {
-            setMovements(res.data.items || []);
-            setHistoryPagination(res.data.pagination || { page: 1, per_page: 10, total: 0, pages: 1 });
-          } else {
-            setHistoryError(res.message || "Failed to load stock movements.");
-          }
+          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          const pag = res?.data?.pagination || res?.pagination || { page: 1, per_page: 10, total: items.length, pages: 1 };
+          setMovements(items);
+          setHistoryPagination(pag);
         }
       } catch (err) {
         if (!ignore) {
@@ -209,6 +228,10 @@ export const InventoryPage = () => {
         reason: adjustData.reason,
         remarks: adjustData.remarks.trim() || null,
       });
+      setToastMessage({
+        type: "success",
+        text: `Stock adjusted for "${selectedProduct.name}" successfully.`,
+      });
       setIsAdjustModalOpen(false);
       setLoading(true);
       setRefreshTrigger((prev) => prev + 1);
@@ -232,440 +255,698 @@ export const InventoryPage = () => {
 
   const projectedStock = calculateProjectedStock();
 
-  return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      <Navbar />
-
-      <main style={{ maxWidth: "1280px", margin: "2rem auto", padding: "0 1.5rem" }}>
-        {/* Header section */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-          <div>
-            <h1 style={{ fontSize: "1.75rem", fontWeight: "700", color: "#0f172a", margin: 0 }}>
-              Inventory Management
-            </h1>
-            <p style={{ color: "#64748b", margin: "0.25rem 0 0 0", fontSize: "0.875rem" }}>
-              Authoritative stock ledger balances, low-stock detection, and audit history.
-            </p>
-          </div>
+  const columns = [
+    {
+      header: "Product",
+      accessor: (row) => (
+        <div>
+          <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{row.product.name}</div>
+          {row.product.barcode && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-muted)", fontFamily: "var(--font-mono)" }}>
+              {row.product.barcode}
+            </div>
+          )}
         </div>
-
-        {/* Filters Bar */}
-        <div
+      ),
+    },
+    {
+      header: "SKU",
+      accessor: (row) => (
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          {row.product.sku}
+        </span>
+      ),
+    },
+    {
+      header: "Category",
+      accessor: (row) => (
+        <span
           style={{
-            backgroundColor: "#ffffff",
-            padding: "1rem 1.25rem",
-            borderRadius: "10px",
-            border: "1px solid #e2e8f0",
-            marginBottom: "1.5rem",
-            display: "flex",
-            gap: "1rem",
-            alignItems: "center",
-            flexWrap: "wrap",
+            backgroundColor: "var(--color-bg)",
+            border: "1px solid var(--color-border-subtle)",
+            color: "var(--color-text)",
+            padding: "2px 8px",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "12px",
+            fontWeight: 500,
           }}
         >
-          <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "0.5rem", flex: 1, minWidth: "260px" }}>
-            <input
-              id="inventory-search-input"
-              type="text"
-              placeholder="Search product name, SKU, or barcode..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{
-                flex: 1,
-                padding: "0.5rem 0.75rem",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                fontSize: "0.875rem",
-                outline: "none",
-              }}
-            />
-            <button
-              type="submit"
-              id="btn-inventory-search"
-              style={{
-                backgroundColor: "#f1f5f9",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                padding: "0.5rem 1rem",
-                fontSize: "0.875rem",
-                fontWeight: "600",
-                color: "#334155",
-                cursor: "pointer",
-              }}
-            >
-              Search
-            </button>
-          </form>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: "500" }}>Category:</span>
-            <select
-              id="inventory-category-filter"
-              value={categoryFilter}
-              onChange={(e) => {
-                setCategoryFilter(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-                setLoading(true);
-              }}
-              style={{
-                padding: "0.5rem 0.75rem",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                fontSize: "0.875rem",
-                backgroundColor: "#ffffff",
-                color: "#334155",
-                cursor: "pointer",
-              }}
-            >
-              <option value="">All Categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: "500" }}>Stock Status:</span>
-            <select
-              id="inventory-status-filter"
-              value={stockStatusFilter}
-              onChange={(e) => {
-                setStockStatusFilter(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-                setLoading(true);
-              }}
-              style={{
-                padding: "0.5rem 0.75rem",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                fontSize: "0.875rem",
-                backgroundColor: "#ffffff",
-                color: "#334155",
-                cursor: "pointer",
-              }}
-            >
-              <option value="ALL">All Items</option>
-              <option value="IN_STOCK">In Stock</option>
-              <option value="LOW_STOCK">Low Stock</option>
-              <option value="OUT_OF_STOCK">Out of Stock</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <div
+          {row.product.category?.name || "Uncategorized"}
+        </span>
+      ),
+    },
+    {
+      header: "Unit",
+      accessor: (row) => row.product.unit,
+    },
+    {
+      header: "Current Stock",
+      align: "right",
+      accessor: (row) => {
+        const isOut = row.is_out_of_stock;
+        const isLow = row.is_low_stock;
+        return (
+          <strong
             style={{
-              padding: "0.75rem 1rem",
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "8px",
-              color: "#b91c1c",
-              fontSize: "0.875rem",
-              marginBottom: "1.5rem",
+              fontFamily: "var(--font-mono)",
+              fontSize: "14px",
+              color: isOut ? "var(--color-danger)" : isLow ? "var(--color-warning)" : "var(--color-success)",
             }}
           >
-            {error}
+            {row.stock_quantity}
+          </strong>
+        );
+      },
+    },
+    {
+      header: "Reorder Level",
+      align: "right",
+      accessor: (row) => (
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+          {row.reorder_level}
+        </span>
+      ),
+    },
+    {
+      header: "Stock Status",
+      accessor: (row) => {
+        if (row.is_out_of_stock) {
+          return <StatusBadge status="OUT OF STOCK" variant="danger" />;
+        }
+        if (row.is_low_stock) {
+          return <StatusBadge status="LOW STOCK" variant="warning" />;
+        }
+        return <StatusBadge status="IN STOCK" variant="success" />;
+      },
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (row) => {
+        const p = row.product;
+        return (
+          <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+            {canAdjust && (
+              <Button
+                id={`btn-adjust-${p.id}`}
+                variant="primary"
+                size="sm"
+                onClick={() => handleOpenAdjust({ ...p, stock_quantity: row.stock_quantity })}
+              >
+                Adjust
+              </Button>
+            )}
+            <Button
+              id={`btn-history-${p.id}`}
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenHistory({ ...p, stock_quantity: row.stock_quantity })}
+            >
+              History
+            </Button>
           </div>
-        )}
+        );
+      },
+    },
+  ];
 
-        {/* Inventory Table */}
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Toast */}
+      {toastMessage && (
+        <Toast
+          type={toastMessage.type}
+          message={toastMessage.text}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
+
+      {/* Page Header */}
+      <PageHeader
+        title="Inventory Management"
+        subtitle="Authoritative stock ledger balances, low-stock detection, and audit history."
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowAnalytics((prev) => !prev)}
+          >
+            {showAnalytics ? "Hide Stock Bar Chart" : "Show Stock Bar Chart"}
+          </Button>
+        }
+      />
+
+      {/* Stock Level & Safety Threshold Bar Chart Section */}
+      {showAnalytics && (
         <div
           style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "10px",
-            border: "1px solid #e2e8f0",
-            overflow: "hidden",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+            backgroundColor: "var(--color-surface)",
+            borderRadius: "var(--radius-lg)",
+            padding: "20px 24px",
+            border: "1px solid var(--color-border)",
+            boxShadow: "var(--shadow-sm)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
           }}
         >
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.875rem" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Product</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>SKU</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Category</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Unit</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600", textAlign: "right" }}>
-                  Current Stock
-                </th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600", textAlign: "right" }}>
-                  Reorder Level
-                </th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Stock Status</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600", textAlign: "right" }}>
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={8} style={{ padding: "2.5rem", textAlign: "center", color: "#64748b" }}>
-                    Loading inventory balances...
-                  </td>
-                </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={8} style={{ padding: "2.5rem", textAlign: "center", color: "#64748b" }}>
-                    No inventory records match current criteria.
-                  </td>
-                </tr>
-              ) : (
-                items.map((row) => {
-                  const p = row.product;
-                  const isOut = row.is_out_of_stock;
-                  const isLow = row.is_low_stock;
-
-                  return (
-                    <tr
-                      key={p.id}
-                      style={{
-                        borderBottom: "1px solid #f1f5f9",
-                        transition: "background-color 0.15s ease",
-                      }}
-                    >
-                      <td style={{ padding: "0.875rem 1rem" }}>
-                        <div style={{ fontWeight: "600", color: "#1e293b" }}>{p.name}</div>
-                        {p.barcode && (
-                          <div style={{ fontSize: "0.75rem", color: "#94a3b8", fontFamily: "monospace" }}>
-                            {p.barcode}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.875rem 1rem", fontFamily: "monospace", color: "#334155" }}>{p.sku}</td>
-                      <td style={{ padding: "0.875rem 1rem" }}>
-                        <span
-                          style={{
-                            backgroundColor: "#f1f5f9",
-                            color: "#334155",
-                            padding: "0.2rem 0.5rem",
-                            borderRadius: "4px",
-                            fontSize: "0.75rem",
-                            fontWeight: "500",
-                          }}
-                        >
-                          {p.category?.name || "Uncategorized"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.875rem 1rem", color: "#475569" }}>{p.unit}</td>
-                      <td style={{ padding: "0.875rem 1rem", textAlign: "right" }}>
-                        <strong
-                          style={{
-                            fontFamily: "monospace",
-                            fontSize: "0.95rem",
-                            color: isOut ? "#dc2626" : isLow ? "#d97706" : "#15803d",
-                          }}
-                        >
-                          {row.stock_quantity}
-                        </strong>
-                      </td>
-                      <td style={{ padding: "0.875rem 1rem", textAlign: "right", fontFamily: "monospace", color: "#64748b" }}>
-                        {row.reorder_level}
-                      </td>
-                      <td style={{ padding: "0.875rem 1rem" }}>
-                        {isOut ? (
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "0.2rem 0.55rem",
-                              borderRadius: "9999px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              backgroundColor: "#fee2e2",
-                              color: "#b91c1c",
-                            }}
-                          >
-                            Out of Stock
-                          </span>
-                        ) : isLow ? (
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "0.2rem 0.55rem",
-                              borderRadius: "9999px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              backgroundColor: "#fef3c7",
-                              color: "#b45309",
-                            }}
-                          >
-                            Low Stock
-                          </span>
-                        ) : (
-                          <span
-                            style={{
-                              display: "inline-block",
-                              padding: "0.2rem 0.55rem",
-                              borderRadius: "9999px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              backgroundColor: "#dcfce7",
-                              color: "#15803d",
-                            }}
-                          >
-                            In Stock
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.875rem 1rem", textAlign: "right" }}>
-                        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-                          {canAdjust && (
-                            <button
-                              id={`btn-adjust-${p.id}`}
-                              onClick={() => handleOpenAdjust({ ...p, stock_quantity: row.stock_quantity })}
-                              style={{
-                                padding: "0.35rem 0.75rem",
-                                backgroundColor: "#2563eb",
-                                border: "none",
-                                borderRadius: "6px",
-                                fontSize: "0.75rem",
-                                fontWeight: "600",
-                                color: "#ffffff",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Adjust
-                            </button>
-                          )}
-                          <button
-                            id={`btn-history-${p.id}`}
-                            onClick={() => handleOpenHistory({ ...p, stock_quantity: row.stock_quantity })}
-                            style={{
-                              padding: "0.35rem 0.75rem",
-                              backgroundColor: "#f8fafc",
-                              border: "1px solid #cbd5e1",
-                              borderRadius: "6px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              color: "#334155",
-                              cursor: "pointer",
-                            }}
-                          >
-                            History
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-
-          {/* Pagination Controls */}
+          {/* Chart Header */}
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "center",
-              padding: "0.875rem 1.25rem",
-              backgroundColor: "#fafafa",
-              borderTop: "1px solid #e2e8f0",
-              fontSize: "0.875rem",
-              color: "#64748b",
+              alignItems: "flex-start",
+              flexWrap: "wrap",
+              gap: "12px",
             }}
           >
-            <span>
-              Showing {items.length} of {pagination.total} inventory items
-            </span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                disabled={pagination.page <= 1}
-                onClick={() => {
-                  setPagination((prev) => ({ ...prev, page: prev.page - 1 }));
-                  setLoading(true);
-                }}
-                style={{
-                  padding: "0.35rem 0.75rem",
-                  backgroundColor: pagination.page <= 1 ? "#f1f5f9" : "#ffffff",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "6px",
-                  fontSize: "0.75rem",
-                  fontWeight: "600",
-                  color: pagination.page <= 1 ? "#94a3b8" : "#334155",
-                  cursor: pagination.page <= 1 ? "not-allowed" : "pointer",
-                }}
-              >
-                Previous
-              </button>
-              <span style={{ padding: "0.35rem 0.5rem", fontWeight: "600" }}>
-                Page {pagination.page} of {pagination.pages || 1}
+            <div>
+              <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+                Stock Level & Safety Reorder Threshold
+              </h2>
+              <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                Comparative bar chart displaying on-hand stock quantities against safety reorder thresholds
               </span>
-              <button
-                disabled={pagination.page >= pagination.pages}
-                onClick={() => {
-                  setPagination((prev) => ({ ...prev, page: prev.page + 1 }));
-                  setLoading(true);
-                }}
+            </div>
+
+            {/* Legend & Summary Badges */}
+            <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+              {/* Legend 1: Current Stock */}
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
+                <span
+                  style={{
+                    width: "14px",
+                    height: "14px",
+                    backgroundColor: "#10B981",
+                    borderRadius: "3px",
+                    display: "inline-block",
+                  }}
+                />
+                <span style={{ fontWeight: 600 }}>Current Stock</span>
+              </div>
+
+              {/* Legend 2: Reorder Level */}
+              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
+                <span
+                  style={{
+                    width: "14px",
+                    height: "14px",
+                    backgroundColor: "rgba(245, 158, 11, 0.25)",
+                    border: "1.5px solid #F59E0B",
+                    borderRadius: "3px",
+                    display: "inline-block",
+                  }}
+                />
+                <span style={{ fontWeight: 600 }}>Reorder Threshold</span>
+              </div>
+
+              {/* Quick Status Pill */}
+              <div
                 style={{
-                  padding: "0.35rem 0.75rem",
-                  backgroundColor: pagination.page >= pagination.pages ? "#f1f5f9" : "#ffffff",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "6px",
-                  fontSize: "0.75rem",
-                  fontWeight: "600",
-                  color: pagination.page >= pagination.pages ? "#94a3b8" : "#334155",
-                  cursor: pagination.page >= pagination.pages ? "not-allowed" : "pointer",
+                  fontSize: "12px",
+                  padding: "3px 10px",
+                  borderRadius: "var(--radius-full)",
+                  backgroundColor: "var(--color-bg)",
+                  border: "1px solid var(--color-border)",
+                  color: "var(--color-text-secondary)",
+                  display: "flex",
+                  gap: "6px",
+                  alignItems: "center",
                 }}
               >
-                Next
-              </button>
+                <span>{items.length} items plotted</span>
+              </div>
             </div>
           </div>
-        </div>
-      </main>
 
-      {/* Stock Adjustment Modal */}
-      {isAdjustModalOpen && selectedProduct && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.5)",
-            backdropFilter: "blur(2px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 100,
-          }}
-        >
+          {/* Interactive Inspection Bar (if hovered, shows item detail; else shows guide) */}
           <div
             style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "12px",
-              padding: "1.75rem",
-              width: "100%",
-              maxWidth: "480px",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+              padding: "8px 14px",
+              borderRadius: "var(--radius-md)",
+              backgroundColor: hoveredPoint ? "var(--color-bg)" : "transparent",
+              border: hoveredPoint ? "1px solid var(--color-border-subtle)" : "1px dashed var(--color-border-subtle)",
+              minHeight: "38px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              fontSize: "12px",
+              transition: "all 0.2s ease",
             }}
           >
-            <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "#0f172a", marginTop: 0, marginBottom: "0.5rem" }}>
-              Manual Stock Adjustment
-            </h2>
+            {hoveredPoint ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", justifyContent: "space-between", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <strong style={{ color: "var(--color-text)", fontSize: "13px" }}>
+                    {hoveredPoint.product.name}
+                  </strong>
+                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-muted)", fontSize: "11px" }}>
+                    ({hoveredPoint.product.sku})
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      padding: "1px 6px",
+                      borderRadius: "var(--radius-sm)",
+                      backgroundColor: "var(--color-surface)",
+                      border: "1px solid var(--color-border-subtle)",
+                    }}
+                  >
+                    {hoveredPoint.product.category?.name || "Uncategorized"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                  <div>
+                    <span style={{ color: "var(--color-text-secondary)" }}>Stock: </span>
+                    <strong
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        color: hoveredPoint.is_out_of_stock
+                          ? "var(--color-danger)"
+                          : hoveredPoint.is_low_stock
+                          ? "var(--color-warning)"
+                          : "var(--color-success)",
+                      }}
+                    >
+                      {parseFloat(hoveredPoint.stock_quantity).toFixed(1)} {hoveredPoint.product.unit}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "var(--color-text-secondary)" }}>Threshold: </span>
+                    <strong style={{ fontFamily: "var(--font-mono)", color: "var(--color-warning)" }}>
+                      {parseFloat(hoveredPoint.reorder_level).toFixed(1)} {hoveredPoint.product.unit}
+                    </strong>
+                  </div>
+                  <div>
+                    <StatusBadge
+                      status={
+                        hoveredPoint.is_out_of_stock
+                          ? "OUT OF STOCK"
+                          : hoveredPoint.is_low_stock
+                          ? "LOW STOCK"
+                          : "IN STOCK"
+                      }
+                      variant={
+                        hoveredPoint.is_out_of_stock
+                          ? "danger"
+                          : hoveredPoint.is_low_stock
+                          ? "warning"
+                          : "success"
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>
+                Tip: Hover over any product bar group to inspect on-hand stock and reorder thresholds.
+              </div>
+            )}
+          </div>
+
+          {/* SVG Bar Chart Canvas */}
+          {items.length === 0 ? (
             <div
               style={{
-                fontSize: "0.875rem",
-                color: "#475569",
-                backgroundColor: "#f8fafc",
-                border: "1px solid #e2e8f0",
-                borderRadius: "6px",
-                padding: "0.6rem 0.85rem",
-                marginBottom: "1rem",
+                padding: "60px 0",
+                textAlign: "center",
+                color: "var(--color-text-muted)",
+                fontSize: "13px",
+              }}
+            >
+              No inventory data available to render the bar chart.
+            </div>
+          ) : (
+            <div style={{ width: "100%", overflowX: "auto" }}>
+              {(() => {
+                const chartWidth = 800;
+                const chartHeight = 280;
+                const padLeft = 60;
+                const padRight = 40;
+                const padTop = 30;
+                const padBottom = 65;
+                const usableWidth = chartWidth - padLeft - padRight;
+                const usableHeight = chartHeight - padTop - padBottom;
+
+                // Determine maximum value across stock and reorder levels
+                const rawMax = Math.max(
+                  ...items.map((it) =>
+                    Math.max(parseFloat(it.stock_quantity) || 0, parseFloat(it.reorder_level) || 0)
+                  )
+                );
+                // Graceful upper ceiling
+                const maxVal = Math.max(10, Math.ceil((rawMax * 1.25) / 5) * 5);
+
+                // Y-axis grid tiers (0%, 25%, 50%, 75%, 100%)
+                const yTiers = [0, 0.25, 0.5, 0.75, 1];
+
+                // Slot and bar sizing
+                const slotWidth = usableWidth / items.length;
+                const groupWidth = Math.min(80, Math.max(28, slotWidth * 0.65));
+                const barWidth = Math.max(8, (groupWidth - 6) / 2);
+
+                return (
+                  <svg
+                    viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+                    style={{ width: "100%", height: "280px", minWidth: "500px", display: "block" }}
+                    onMouseLeave={() => setHoveredPoint(null)}
+                  >
+                    {/* Horizontal Gridlines & Y-Axis Labels */}
+                    {yTiers.map((tier) => {
+                      const y = padTop + (1 - tier) * usableHeight;
+                      const labelVal = Math.round(maxVal * tier);
+                      return (
+                        <g key={tier}>
+                          <line
+                            x1={padLeft}
+                            y1={y}
+                            x2={padLeft + usableWidth}
+                            y2={y}
+                            stroke="var(--color-border-subtle)"
+                            strokeWidth="1"
+                            strokeDasharray={tier === 0 ? "none" : "3 3"}
+                            opacity={tier === 0 ? 0.9 : 0.6}
+                          />
+                          <text
+                            x={padLeft - 10}
+                            y={y + 4}
+                            textAnchor="end"
+                            fill="var(--color-text-secondary)"
+                            fontSize="11px"
+                            fontFamily="var(--font-mono)"
+                          >
+                            {labelVal}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Grouped Bars per Product */}
+                    {items.map((it, idx) => {
+                      const isHovered = hoveredPoint?.product.id === it.product.id;
+                      const current = Math.max(0, parseFloat(it.stock_quantity) || 0);
+                      const reorder = Math.max(0, parseFloat(it.reorder_level) || 0);
+
+                      const currentHeight = Math.max(current > 0 ? 3 : 2, (current / maxVal) * usableHeight);
+                      const reorderHeight = Math.max(reorder > 0 ? 3 : 2, (reorder / maxVal) * usableHeight);
+
+                      const slotCenterX = padLeft + idx * slotWidth + slotWidth / 2;
+                      const bar1X = slotCenterX - groupWidth / 2;
+                      const bar1Y = padTop + usableHeight - currentHeight;
+
+                      const bar2X = bar1X + barWidth + 6;
+                      const bar2Y = padTop + usableHeight - reorderHeight;
+
+                      const bar1Color = it.is_out_of_stock
+                        ? "#EF4444"
+                        : it.is_low_stock
+                        ? "#F59E0B"
+                        : "#10B981";
+
+                      return (
+                        <g
+                          key={it.product.id}
+                          style={{ cursor: "pointer" }}
+                          onMouseEnter={() => setHoveredPoint(it)}
+                        >
+                          {/* Hover Background Card */}
+                          {isHovered && (
+                            <rect
+                              x={slotCenterX - groupWidth / 2 - 8}
+                              y={padTop - 8}
+                              width={groupWidth + 16}
+                              height={usableHeight + 14}
+                              rx="6"
+                              fill="var(--color-text)"
+                              opacity="0.04"
+                            />
+                          )}
+
+                          {/* Bar 1: Current Stock */}
+                          <rect
+                            x={bar1X}
+                            y={bar1Y}
+                            width={barWidth}
+                            height={currentHeight}
+                            rx="4"
+                            ry="4"
+                            fill={bar1Color}
+                            opacity={isHovered ? 1 : 0.9}
+                            style={{ transition: "all 0.2s ease" }}
+                          />
+
+                          {/* Bar 1 Numeric Top Label */}
+                          <text
+                            x={bar1X + barWidth / 2}
+                            y={bar1Y - 4}
+                            textAnchor="middle"
+                            fill={bar1Color}
+                            fontSize="10px"
+                            fontWeight={700}
+                            fontFamily="var(--font-mono)"
+                          >
+                            {current.toFixed(1)}
+                          </text>
+
+                          {/* Bar 2: Reorder Threshold */}
+                          <rect
+                            x={bar2X}
+                            y={bar2Y}
+                            width={barWidth}
+                            height={reorderHeight}
+                            rx="4"
+                            ry="4"
+                            fill="rgba(245, 158, 11, 0.2)"
+                            stroke="#F59E0B"
+                            strokeWidth="1.5"
+                            opacity={isHovered ? 1 : 0.85}
+                            style={{ transition: "all 0.2s ease" }}
+                          />
+
+                          {/* Bar 2 Numeric Top Label */}
+                          {reorder > 0 && (
+                            <text
+                              x={bar2X + barWidth / 2}
+                              y={bar2Y - 4}
+                              textAnchor="middle"
+                              fill="#F59E0B"
+                              fontSize="10px"
+                              fontWeight={600}
+                              fontFamily="var(--font-mono)"
+                            >
+                              {reorder.toFixed(1)}
+                            </text>
+                          )}
+
+                          {/* X-Axis Product Label */}
+                          <text
+                            x={slotCenterX}
+                            y={padTop + usableHeight + 20}
+                            textAnchor="middle"
+                            fill={isHovered ? "var(--color-text)" : "var(--color-text-secondary)"}
+                            fontSize="11px"
+                            fontWeight={isHovered ? 700 : 500}
+                          >
+                            {it.product.name.length > 15
+                              ? `${it.product.name.slice(0, 14)}…`
+                              : it.product.name}
+                          </text>
+
+                          {/* X-Axis SKU Subtitle */}
+                          <text
+                            x={slotCenterX}
+                            y={padTop + usableHeight + 35}
+                            textAnchor="middle"
+                            fill="var(--color-text-muted)"
+                            fontSize="10px"
+                            fontFamily="var(--font-mono)"
+                          >
+                            {it.product.sku}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Filters Bar */}
+      <div
+        style={{
+          backgroundColor: "var(--color-surface)",
+          padding: "16px 20px",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-border)",
+          display: "flex",
+          gap: "14px",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "8px", flex: 1, minWidth: "260px" }}>
+          <input
+            id="inventory-search-input"
+            type="text"
+            placeholder="Search product name, SKU, or barcode..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{
+              flex: 1,
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
+          <Button
+            type="submit"
+            id="btn-inventory-search"
+            variant="secondary"
+            size="md"
+          >
+            Search
+          </Button>
+        </form>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="inventory-category-filter" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            Category:
+          </label>
+          <select
+            id="inventory-category-filter"
+            value={categoryFilter}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+              setLoading(true);
+            }}
+            style={{
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            <option value="">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="inventory-status-filter" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            Status:
+          </label>
+          <select
+            id="inventory-status-filter"
+            value={stockStatusFilter}
+            onChange={(e) => {
+              setStockStatusFilter(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+              setLoading(true);
+            }}
+            style={{
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+              cursor: "pointer",
+            }}
+          >
+            <option value="ALL">All Stock Statuses</option>
+            <option value="IN_STOCK">In Stock</option>
+            <option value="LOW_STOCK">Low Stock</option>
+            <option value="OUT_OF_STOCK">Out of Stock</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Error Notice */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: "12px 16px",
+            backgroundColor: "var(--color-danger-soft)",
+            border: "1px solid var(--color-danger)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-danger)",
+            fontSize: "13px",
+            fontWeight: 500,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Inventory Table */}
+      <DataTable
+        columns={columns}
+        data={items}
+        loading={loading}
+        emptyTitle="No inventory records found"
+        emptyMessage="No items match your search or filter criteria."
+      />
+
+      {/* Pagination */}
+      {!loading && items.length > 0 && pagination.pages > 1 && (
+        <Pagination
+          currentPage={pagination.page}
+          totalPages={pagination.pages}
+          totalItems={pagination.total}
+          onPageChange={(p) => {
+            setPagination((prev) => ({ ...prev, page: p }));
+            setLoading(true);
+          }}
+        />
+      )}
+
+      {/* Stock Adjustment Modal */}
+      <Modal
+        isOpen={isAdjustModalOpen && Boolean(selectedProduct)}
+        onClose={handleCloseAdjust}
+        title="Manual Stock Adjustment"
+        maxWidth="500px"
+      >
+        {selectedProduct && (
+          <>
+            <div
+              style={{
+                fontSize: "13px",
+                color: "var(--color-text)",
+                backgroundColor: "var(--color-bg)",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                padding: "12px 16px",
+                marginBottom: "16px",
               }}
             >
               <div>
                 Product: <strong>{selectedProduct.name}</strong> ({selectedProduct.sku})
               </div>
-              <div style={{ marginTop: "0.25rem" }}>
+              <div style={{ marginTop: "4px" }}>
                 Current Stock:{" "}
-                <strong style={{ fontFamily: "monospace", color: "#0f172a" }}>
+                <strong style={{ fontFamily: "var(--font-mono)", color: "var(--color-primary)" }}>
                   {selectedProduct.stock_quantity} {selectedProduct.unit}
                 </strong>
               </div>
@@ -673,14 +954,15 @@ export const InventoryPage = () => {
 
             {adjustError && (
               <div
+                role="alert"
                 style={{
-                  padding: "0.5rem 0.75rem",
-                  backgroundColor: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  borderRadius: "6px",
-                  color: "#b91c1c",
-                  fontSize: "0.8125rem",
-                  marginBottom: "1rem",
+                  padding: "10px 14px",
+                  backgroundColor: "var(--color-danger-soft)",
+                  border: "1px solid var(--color-danger)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-danger)",
+                  fontSize: "13px",
+                  marginBottom: "16px",
                 }}
               >
                 {adjustError}
@@ -688,54 +970,32 @@ export const InventoryPage = () => {
             )}
 
             <form onSubmit={handleAdjustSubmit}>
-              {/* Direction Toggle */}
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.35rem" }}>
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "var(--color-text)", marginBottom: "6px" }}>
                   Adjustment Direction *
                 </label>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
-                  <button
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <Button
                     type="button"
+                    variant={adjustData.direction === "IN" ? "primary" : "secondary"}
+                    size="md"
                     onClick={() => setAdjustData({ ...adjustData, direction: "IN" })}
-                    style={{
-                      padding: "0.6rem",
-                      borderRadius: "6px",
-                      border: adjustData.direction === "IN" ? "2px solid #16a34a" : "1px solid #cbd5e1",
-                      backgroundColor: adjustData.direction === "IN" ? "#f0fdf4" : "#ffffff",
-                      color: adjustData.direction === "IN" ? "#16a34a" : "#475569",
-                      fontWeight: "700",
-                      fontSize: "0.875rem",
-                      cursor: "pointer",
-                    }}
                   >
-                    + Add Stock (IN)
-                  </button>
-                  <button
+                    + Stock In (Increase)
+                  </Button>
+                  <Button
                     type="button"
+                    variant={adjustData.direction === "OUT" ? "danger" : "secondary"}
+                    size="md"
                     onClick={() => setAdjustData({ ...adjustData, direction: "OUT" })}
-                    style={{
-                      padding: "0.6rem",
-                      borderRadius: "6px",
-                      border: adjustData.direction === "OUT" ? "2px solid #dc2626" : "1px solid #cbd5e1",
-                      backgroundColor: adjustData.direction === "OUT" ? "#fef2f2" : "#ffffff",
-                      color: adjustData.direction === "OUT" ? "#dc2626" : "#475569",
-                      fontWeight: "700",
-                      fontSize: "0.875rem",
-                      cursor: "pointer",
-                    }}
                   >
-                    - Deduct Stock (OUT)
-                  </button>
+                    - Stock Out (Deduct)
+                  </Button>
                 </div>
               </div>
 
-              {/* Quantity Input */}
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                  Quantity ({selectedProduct.unit}) *
-                </label>
-                <input
-                  id="modal-adjust-quantity"
+              <FormField label={`Quantity (${selectedProduct.unit})`} required id="modal-adjust-qty">
+                <Input
                   type="number"
                   step="0.001"
                   min="0.001"
@@ -743,327 +1003,227 @@ export const InventoryPage = () => {
                   placeholder="0.000"
                   value={adjustData.quantity}
                   onChange={(e) => setAdjustData({ ...adjustData, quantity: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "0.5rem 0.75rem",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    outline: "none",
-                  }}
                 />
-              </div>
+              </FormField>
 
-              {/* Reason Selector */}
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                  Reason *
-                </label>
-                <select
-                  id="modal-adjust-reason"
-                  value={adjustData.reason}
-                  onChange={(e) => setAdjustData({ ...adjustData, reason: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "0.5rem 0.75rem",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    backgroundColor: "#ffffff",
-                    outline: "none",
-                  }}
-                >
-                  <option value="PHYSICAL_COUNT">Physical Count Correction</option>
-                  {adjustData.direction === "OUT" && (
-                    <>
-                      <option value="DAMAGED">Damaged Goods</option>
-                      <option value="EXPIRED">Expired Inventory</option>
-                    </>
-                  )}
-                  <option value="CORRECTION">General Ledger Correction</option>
-                  <option value="OTHER">Other Reason</option>
-                </select>
-              </div>
-
-              {/* Remarks */}
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                  Remarks / Justification
-                </label>
-                <textarea
-                  id="modal-adjust-remarks"
-                  rows={2}
-                  placeholder="Optional audit explanation..."
-                  value={adjustData.remarks}
-                  onChange={(e) => setAdjustData({ ...adjustData, remarks: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "0.5rem 0.75rem",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    outline: "none",
-                    fontFamily: "inherit",
-                  }}
-                />
-              </div>
-
-              {/* Projected Stock Preview */}
-              {adjustData.quantity && !isNaN(parseFloat(adjustData.quantity)) && (
+              {/* Projected Balance Card */}
+              {projectedStock !== null && (
                 <div
                   style={{
-                    padding: "0.5rem 0.75rem",
-                    backgroundColor: parseFloat(projectedStock) < 0 ? "#fef2f2" : "#f0fdf4",
-                    border: parseFloat(projectedStock) < 0 ? "1px solid #fecaca" : "1px solid #bbf7d0",
-                    borderRadius: "6px",
-                    fontSize: "0.8125rem",
-                    marginBottom: "1.25rem",
-                    color: parseFloat(projectedStock) < 0 ? "#b91c1c" : "#15803d",
+                    padding: "10px 14px",
+                    backgroundColor: parseFloat(projectedStock) < 0 ? "var(--color-danger-soft)" : "var(--color-surface)",
+                    border: `1px solid ${parseFloat(projectedStock) < 0 ? "var(--color-danger)" : "var(--color-border)"}`,
+                    borderRadius: "var(--radius-md)",
+                    marginBottom: "16px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "13px",
                   }}
                 >
-                  Projected Stock Balance: <strong>{projectedStock} {selectedProduct.unit}</strong>
-                  {parseFloat(projectedStock) < 0 && " (Error: Cannot result in negative stock)"}
+                  <span style={{ color: "var(--color-text-secondary)" }}>Projected Balance:</span>
+                  <strong
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontSize: "14px",
+                      color: parseFloat(projectedStock) < 0 ? "var(--color-danger)" : "var(--color-primary)",
+                    }}
+                  >
+                    {projectedStock} {selectedProduct.unit}
+                  </strong>
                 </div>
               )}
 
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-                <button
-                  type="button"
+              <FormField label="Reason for Adjustment" required id="modal-adjust-reason">
+                <Select
+                  value={adjustData.reason}
+                  onChange={(e) => setAdjustData({ ...adjustData, reason: e.target.value })}
+                >
+                  <option value="PHYSICAL_COUNT">Physical Inventory Count Reconciliation</option>
+                  <option value="DAMAGE">Damaged Goods / Breakage</option>
+                  <option value="EXPIRY">Expired Stock Disposal</option>
+                  <option value="CORRECTION">Ledger Correction</option>
+                  <option value="THEFT">Shrinkage / Discrepancy</option>
+                  <option value="OTHER">Other Reason</option>
+                </Select>
+              </FormField>
+
+              <FormField label="Audit Remarks / Notes" id="modal-adjust-remarks">
+                <Textarea
+                  rows={2}
+                  placeholder="Optional audit justification note..."
+                  value={adjustData.remarks}
+                  onChange={(e) => setAdjustData({ ...adjustData, remarks: e.target.value })}
+                />
+              </FormField>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+                <Button
+                  id="btn-adjust-cancel"
+                  variant="secondary"
+                  size="md"
                   onClick={handleCloseAdjust}
-                  style={{
-                    padding: "0.5rem 1rem",
-                    backgroundColor: "#f1f5f9",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    fontWeight: "600",
-                    color: "#475569",
-                    cursor: "pointer",
-                  }}
+                  disabled={adjustSubmitting}
                 >
                   Cancel
-                </button>
-                <button
-                  type="submit"
+                </Button>
+                <Button
                   id="btn-modal-adjust-submit"
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  loading={adjustSubmitting}
                   disabled={adjustSubmitting || (adjustData.direction === "OUT" && parseFloat(projectedStock) < 0)}
-                  style={{
-                    padding: "0.5rem 1.25rem",
-                    backgroundColor: "#2563eb",
-                    border: "none",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    fontWeight: "600",
-                    color: "#ffffff",
-                    cursor: adjustSubmitting ? "not-allowed" : "pointer",
-                  }}
                 >
                   {adjustSubmitting ? "Adjusting..." : "Confirm Adjustment"}
-                </button>
+                </Button>
               </div>
             </form>
+          </>
+        )}
+      </Modal>
+
+      {/* Movement History Drawer */}
+      <Drawer
+        isOpen={isHistoryOpen && Boolean(historyProduct)}
+        onClose={handleCloseHistory}
+        title={historyProduct ? `Ledger: ${historyProduct.name}` : "Stock Movements"}
+        subtitle={
+          historyProduct ? (
+            <span>
+              SKU: <strong style={{ fontFamily: "var(--font-mono)" }}>{historyProduct.sku}</strong> | Current:{" "}
+              <strong>{historyProduct.stock_quantity} {historyProduct.unit}</strong>
+            </span>
+          ) : null
+        }
+        width="680px"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {/* Movement Type Filter */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <label htmlFor="history-movement-type-filter" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+              Filter:
+            </label>
+            <select
+              id="history-movement-type-filter"
+              value={movementTypeFilter}
+              onChange={(e) => setMovementTypeFilter(e.target.value)}
+              style={{
+                height: "36px",
+                padding: "0 10px",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                fontSize: "13px",
+                backgroundColor: "var(--color-surface)",
+                color: "var(--color-text)",
+              }}
+            >
+              <option value="">All Movement Types</option>
+              <option value="ADJUSTMENT_IN">ADJUSTMENT_IN</option>
+              <option value="ADJUSTMENT_OUT">ADJUSTMENT_OUT</option>
+              <option value="DAMAGED">DAMAGED</option>
+              <option value="EXPIRED">EXPIRED</option>
+              <option value="PURCHASE">PURCHASE</option>
+              <option value="SALE">SALE</option>
+              <option value="RETURN">RETURN</option>
+            </select>
           </div>
-        </div>
-      )}
 
-      {/* Movement History Drawer / Modal */}
-      {isHistoryOpen && historyProduct && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.5)",
-            backdropFilter: "blur(2px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 100,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "12px",
-              padding: "1.75rem",
-              width: "100%",
-              maxWidth: "760px",
-              maxHeight: "85vh",
-              display: "flex",
-              flexDirection: "column",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <div>
-                <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "#0f172a", margin: 0 }}>
-                  Movement History: {historyProduct.name}
-                </h2>
-                <div style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "0.25rem" }}>
-                  SKU: <strong style={{ fontFamily: "monospace" }}>{historyProduct.sku}</strong> | Current Stock:{" "}
-                  <strong>{historyProduct.stock_quantity} {historyProduct.unit}</strong>
-                </div>
-              </div>
-              <button
-                onClick={handleCloseHistory}
-                style={{
-                  backgroundColor: "transparent",
-                  border: "none",
-                  fontSize: "1.25rem",
-                  cursor: "pointer",
-                  color: "#64748b",
-                }}
-              >
-                &times;
-              </button>
+          {historyError && (
+            <div
+              role="alert"
+              style={{
+                padding: "10px 14px",
+                backgroundColor: "var(--color-danger-soft)",
+                border: "1px solid var(--color-danger)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-danger)",
+                fontSize: "13px",
+              }}
+            >
+              {historyError}
             </div>
+          )}
 
-            {/* Filter */}
-            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-              <span style={{ fontSize: "0.8125rem", color: "#64748b", fontWeight: "500" }}>Filter Type:</span>
-              <select
-                value={movementTypeFilter}
-                onChange={(e) => setMovementTypeFilter(e.target.value)}
-                style={{
-                  padding: "0.35rem 0.6rem",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "6px",
-                  fontSize: "0.8125rem",
-                  backgroundColor: "#ffffff",
-                }}
-              >
-                <option value="">All Movement Types</option>
-                <option value="ADJUSTMENT_IN">ADJUSTMENT_IN</option>
-                <option value="ADJUSTMENT_OUT">ADJUSTMENT_OUT</option>
-                <option value="DAMAGED">DAMAGED</option>
-                <option value="EXPIRED">EXPIRED</option>
-                <option value="PURCHASE">PURCHASE</option>
-                <option value="SALE">SALE</option>
-                <option value="RETURN">RETURN</option>
-              </select>
-            </div>
-
-            {historyError && (
-              <div
-                style={{
-                  padding: "0.5rem 0.75rem",
-                  backgroundColor: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  borderRadius: "6px",
-                  color: "#b91c1c",
-                  fontSize: "0.8125rem",
-                  marginBottom: "1rem",
-                }}
-              >
-                {historyError}
-              </div>
-            )}
-
-            {/* History Table Container */}
-            <div style={{ flex: 1, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.8125rem" }}>
-                <thead>
-                  <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                    <th style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>Timestamp</th>
-                    <th style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>Type</th>
-                    <th style={{ padding: "0.6rem 0.75rem", color: "#475569", textAlign: "right" }}>Qty</th>
-                    <th style={{ padding: "0.6rem 0.75rem", color: "#475569", textAlign: "right" }}>Balance</th>
-                    <th style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>Performed By</th>
-                    <th style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>Remarks</th>
+          {/* Movements Table */}
+          <div style={{ overflowX: "auto", border: "1px solid var(--color-border)", borderRadius: "var(--radius-md)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "12px" }}>
+              <thead>
+                <tr style={{ backgroundColor: "var(--color-bg)", borderBottom: "1px solid var(--color-border)" }}>
+                  <th style={{ padding: "8px 10px", color: "var(--color-text-secondary)" }}>Timestamp</th>
+                  <th style={{ padding: "8px 10px", color: "var(--color-text-secondary)" }}>Type</th>
+                  <th style={{ padding: "8px 10px", color: "var(--color-text-secondary)", textAlign: "right" }}>Qty</th>
+                  <th style={{ padding: "8px 10px", color: "var(--color-text-secondary)", textAlign: "right" }}>Balance</th>
+                  <th style={{ padding: "8px 10px", color: "var(--color-text-secondary)" }}>User</th>
+                  <th style={{ padding: "8px 10px", color: "var(--color-text-secondary)" }}>Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historyLoading ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: "32px", textAlign: "center", color: "var(--color-text-secondary)" }}>
+                      Loading movement history...
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {historyLoading ? (
-                    <tr>
-                      <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "#64748b" }}>
-                        Loading movement history...
-                      </td>
-                    </tr>
-                  ) : movements.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "#64748b" }}>
-                        No stock movement ledger records found.
-                      </td>
-                    </tr>
-                  ) : (
-                    movements.map((m) => {
-                      const isPositive = ["ADJUSTMENT_IN", "PURCHASE", "RETURN"].includes(m.movement_type);
-                      return (
-                        <tr key={m.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "0.6rem 0.75rem", color: "#64748b", whiteSpace: "nowrap" }}>
-                            {m.created_at ? new Date(m.created_at).toLocaleString() : "—"}
-                          </td>
-                          <td style={{ padding: "0.6rem 0.75rem" }}>
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "0.15rem 0.45rem",
-                                borderRadius: "4px",
-                                fontSize: "0.7rem",
-                                fontWeight: "600",
-                                backgroundColor: isPositive ? "#f0fdf4" : "#fef2f2",
-                                color: isPositive ? "#16a34a" : "#dc2626",
-                              }}
-                            >
-                              {m.movement_type}
-                            </span>
-                          </td>
-                          <td
-                            style={{
-                              padding: "0.6rem 0.75rem",
-                              textAlign: "right",
-                              fontFamily: "monospace",
-                              fontWeight: "700",
-                              color: isPositive ? "#16a34a" : "#dc2626",
-                            }}
-                          >
-                            {isPositive ? `+${m.quantity}` : `-${m.quantity}`}
-                          </td>
-                          <td style={{ padding: "0.6rem 0.75rem", textAlign: "right", fontFamily: "monospace", color: "#475569" }}>
-                            {m.quantity_before} &rarr; <strong>{m.quantity_after}</strong>
-                          </td>
-                          <td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>
-                            {m.created_by ? m.created_by.name || m.created_by.email : "System"}
-                          </td>
-                          <td style={{ padding: "0.6rem 0.75rem", color: "#64748b", maxWidth: "200px" }}>
-                            {m.remarks || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Close Button */}
-            <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={handleCloseHistory}
-                style={{
-                  padding: "0.5rem 1.25rem",
-                  backgroundColor: "#f1f5f9",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "6px",
-                  fontSize: "0.875rem",
-                  fontWeight: "600",
-                  color: "#334155",
-                  cursor: "pointer",
-                }}
-              >
-                Close History
-              </button>
-            </div>
+                ) : movements.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: "32px", textAlign: "center", color: "var(--color-text-muted)" }}>
+                      No stock movements found.
+                    </td>
+                  </tr>
+                ) : (
+                  movements.map((m) => {
+                    const isPositive = ["ADJUSTMENT_IN", "PURCHASE", "RETURN"].includes(m.movement_type);
+                    return (
+                      <tr key={m.id} style={{ borderBottom: "1px solid var(--color-border-subtle)" }}>
+                        <td style={{ padding: "8px 10px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                          {m.created_at ? new Date(m.created_at).toLocaleString() : "—"}
+                        </td>
+                        <td style={{ padding: "8px 10px" }}>
+                          <StatusBadge
+                            status={m.movement_type}
+                            variant={isPositive ? "success" : "danger"}
+                          />
+                        </td>
+                        <td
+                          style={{
+                            padding: "8px 10px",
+                            textAlign: "right",
+                            fontFamily: "var(--font-mono)",
+                            fontWeight: 700,
+                            color: isPositive ? "var(--color-success)" : "var(--color-danger)",
+                          }}
+                        >
+                          {isPositive ? `+${m.quantity}` : `-${m.quantity}`}
+                        </td>
+                        <td style={{ padding: "8px 10px", textAlign: "right", fontFamily: "var(--font-mono)", color: "var(--color-text)" }}>
+                          {m.quantity_before} &rarr; <strong>{m.quantity_after}</strong>
+                        </td>
+                        <td style={{ padding: "8px 10px", color: "var(--color-text)" }}>
+                          {m.created_by ? m.created_by.name || m.created_by.email : "System"}
+                        </td>
+                        <td style={{ padding: "8px 10px", color: "var(--color-text-secondary)", maxWidth: "180px" }}>
+                          {m.remarks || "—"}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
+
+          {/* History Pagination */}
+          {!historyLoading && movements.length > 0 && historyPagination.pages > 1 && (
+            <Pagination
+              currentPage={historyPagination.page}
+              totalPages={historyPagination.pages}
+              totalItems={historyPagination.total}
+              onPageChange={(p) => setHistoryPagination((prev) => ({ ...prev, page: p }))}
+            />
+          )}
         </div>
-      )}
+      </Drawer>
     </div>
   );
 };

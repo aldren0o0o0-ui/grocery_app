@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import {
   getExpensesApi,
@@ -11,10 +10,24 @@ import {
   updateExpenseCategoryApi,
   setExpenseCategoryStatusApi,
 } from "../modules/expenses/api";
+import {
+  PageHeader,
+  Button,
+  DataTable,
+  Pagination,
+  Modal,
+  Drawer,
+  FormField,
+  Input,
+  Select,
+  Textarea,
+  Toast,
+} from "../components/common";
 
 export const ExpensesPage = () => {
   const { user } = useAuth();
   const isOwner = user?.role === "OWNER";
+  const canRecord = ["OWNER", "STAFF"].includes(user?.role);
   const todayStr = new Date().toISOString().split("T")[0];
 
   // Expenses state
@@ -26,7 +39,7 @@ export const ExpensesPage = () => {
   const [dateTo, setDateTo] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [successMsg, setSuccessMsg] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Categories state
@@ -45,7 +58,7 @@ export const ExpensesPage = () => {
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
-  // Expense Detail Modal
+  // Expense Detail Drawer
   const [selectedExpense, setSelectedExpense] = useState(null);
 
   // Category Management Modal (OWNER only)
@@ -65,7 +78,8 @@ export const ExpensesPage = () => {
       try {
         const res = await getExpenseCategoriesApi();
         if (!ignore) {
-          setCategories(res.categories || []);
+          const catList = res?.categories || res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          setCategories(catList);
         }
       } catch {
         // Silently keep empty categories
@@ -87,15 +101,17 @@ export const ExpensesPage = () => {
         const params = {
           page: pagination.page,
           per_page: 20,
-          search,
-          category_id: categoryFilter,
+          search: search?.trim() || undefined,
+          category_id: categoryFilter && categoryFilter !== "ALL" ? categoryFilter : undefined,
           date_from: dateFrom || undefined,
           date_to: dateTo || undefined,
         };
         const res = await getExpensesApi(params);
         if (!ignore) {
-          setExpenses(res.expenses || []);
-          setPagination(res.pagination || { page: 1, per_page: 20, total: 0, pages: 1 });
+          const items = res?.expenses || res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          const pag = res?.pagination || res?.data?.pagination || { page: 1, per_page: 20, total: items.length, pages: 1 };
+          setExpenses(items);
+          setPagination(pag);
         }
       } catch (err) {
         if (!ignore) {
@@ -121,7 +137,6 @@ export const ExpensesPage = () => {
     setDateTo("");
   };
 
-  // Open Create Expense Modal
   const handleOpenCreateModal = () => {
     const activeCats = categories.filter((c) => c.is_active);
     const defaultCatId = activeCats.length > 0 ? activeCats[0].id : "";
@@ -137,7 +152,6 @@ export const ExpensesPage = () => {
     setShowExpenseModal(true);
   };
 
-  // Open Edit Expense Modal (OWNER only)
   const handleOpenEditModal = async (expId) => {
     try {
       const res = await getExpenseDetailApi(expId);
@@ -153,53 +167,56 @@ export const ExpensesPage = () => {
       setFormError("");
       setShowExpenseModal(true);
     } catch (err) {
-      setError(err.response?.data?.error?.message || "Failed to load expense details for editing.");
+      setToastMessage({
+        type: "error",
+        text: err.response?.data?.error?.message || "Failed to fetch expense details for editing.",
+      });
     }
   };
 
-  // View read-only detail
-  const handleViewDetail = async (expId) => {
-    try {
-      const res = await getExpenseDetailApi(expId);
-      setSelectedExpense(res.expense);
-    } catch (err) {
-      setError(err.response?.data?.error?.message || "Failed to load expense details.");
-    }
-  };
-
-  // Submit Expense Form
-  const handleSubmitExpense = async (e) => {
+  const handleExpenseFormSubmit = async (e) => {
     e.preventDefault();
+    setFormError("");
+
+    if (!formData.category_id) {
+      setFormError("Category is required.");
+      return;
+    }
+    if (!formData.expense_date) {
+      setFormError("Expense date is required.");
+      return;
+    }
+    if (formData.expense_date > todayStr) {
+      setFormError("Expense date cannot be in the future.");
+      return;
+    }
+
+    const val = parseFloat(formData.amount);
+    if (isNaN(val) || val <= 0) {
+      setFormError("Amount must be greater than zero.");
+      return;
+    }
+    const parts = formData.amount.toString().split(".");
+    if (parts.length > 1 && parts[1].length > 2) {
+      setFormError("Amount exceeds maximum 2 decimal places.");
+      return;
+    }
+
+    setFormSubmitting(true);
     try {
-      setFormSubmitting(true);
-      setFormError("");
-
-      const amountVal = parseFloat(formData.amount);
-      if (isNaN(amountVal) || amountVal <= 0) {
-        setFormError("Amount must be greater than zero.");
-        setFormSubmitting(false);
-        return;
-      }
-
-      if (formData.expense_date > todayStr) {
-        setFormError("Expense date cannot be in the future.");
-        setFormSubmitting(false);
-        return;
-      }
-
       const payload = {
         category_id: parseInt(formData.category_id, 10),
-        amount: amountVal.toFixed(2),
+        amount: val.toFixed(2),
         expense_date: formData.expense_date,
-        description: formData.description.trim() || undefined,
+        description: formData.description?.trim() || null,
       };
 
       if (modalMode === "CREATE") {
         await createExpenseApi(payload);
-        setSuccessMsg("Expense recorded successfully!");
+        setToastMessage({ type: "success", text: "Expense recorded successfully." });
       } else {
         await updateExpenseApi(editingExpenseId, payload);
-        setSuccessMsg("Expense record updated successfully!");
+        setToastMessage({ type: "success", text: "Expense updated successfully." });
       }
 
       setShowExpenseModal(false);
@@ -211,36 +228,27 @@ export const ExpensesPage = () => {
     }
   };
 
-  // Category management handlers
-  const handleAddCategory = async (e) => {
+  const handleCreateCategory = async (e) => {
     e.preventDefault();
     if (!newCatName.trim()) {
       setCatError("Category name is required.");
       return;
     }
+    setCatSubmitting(true);
+    setCatError("");
     try {
-      setCatSubmitting(true);
-      setCatError("");
       await createExpenseCategoryApi({
         name: newCatName.trim(),
-        description: newCatDesc.trim() || undefined,
+        description: newCatDesc.trim() || null,
       });
       setNewCatName("");
       setNewCatDesc("");
+      setToastMessage({ type: "success", text: "Expense category created." });
       setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      setCatError(err.response?.data?.error?.message || "Failed to create category.");
+      setCatError(err.response?.data?.error?.message || err.response?.data?.message || "Failed to create category.");
     } finally {
       setCatSubmitting(false);
-    }
-  };
-
-  const handleToggleCategoryStatus = async (cat) => {
-    try {
-      await setExpenseCategoryStatusApi(cat.id, !cat.is_active);
-      setRefreshTrigger((prev) => prev + 1);
-    } catch (err) {
-      setCatError(err.response?.data?.error?.message || "Failed to update category status.");
     }
   };
 
@@ -252,938 +260,634 @@ export const ExpensesPage = () => {
 
   const handleSaveEditCat = async (catId) => {
     if (!editCatName.trim()) {
-      setCatError("Category name cannot be empty.");
+      setCatError("Category name is required.");
       return;
     }
+    setCatSubmitting(true);
+    setCatError("");
     try {
       await updateExpenseCategoryApi(catId, {
         name: editCatName.trim(),
-        description: editCatDesc.trim() || undefined,
+        description: editCatDesc.trim() || null,
       });
       setEditingCatId(null);
+      setToastMessage({ type: "success", text: "Expense category updated." });
       setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      setCatError(err.response?.data?.error?.message || "Failed to update category.");
+      setCatError(err.response?.data?.error?.message || err.response?.data?.message || "Failed to update category.");
+    } finally {
+      setCatSubmitting(false);
     }
   };
 
-  const totalFilteredAmount = expenses.reduce((sum, e) => sum + (parseFloat(e.amount) || 0), 0);
-  const activeCategoriesCount = categories.filter((c) => c.is_active).length;
+  const handleToggleCatStatus = async (catId, currentStatus) => {
+    try {
+      await setExpenseCategoryStatusApi(catId, !currentStatus);
+      setToastMessage({
+        type: "success",
+        text: `Category ${!currentStatus ? "activated" : "deactivated"}.`,
+      });
+      setRefreshTrigger((prev) => prev + 1);
+    } catch (err) {
+      setCatError(err.response?.data?.error?.message || err.response?.data?.message || "Failed to toggle status.");
+    }
+  };
+
+  // Filter available categories based on modal mode
+  const availableCategories =
+    modalMode === "CREATE"
+      ? categories.filter((c) => c.is_active)
+      : categories.filter((c) => c.is_active || c.id === formData.category_id);
+
+  const columns = [
+    {
+      header: "Expense Date",
+      accessor: "expense_date",
+    },
+    {
+      header: "Category",
+      accessor: (exp) => (
+        <span
+          style={{
+            backgroundColor: "var(--color-bg)",
+            border: "1px solid var(--color-border-subtle)",
+            color: "var(--color-text)",
+            padding: "2px 8px",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "12px",
+            fontWeight: 500,
+          }}
+        >
+          {exp.category_name}
+        </span>
+      ),
+    },
+    {
+      header: "Amount",
+      align: "right",
+      accessor: (exp) => (
+        <strong style={{ fontFamily: "var(--font-mono)", fontSize: "14px", color: "var(--color-danger)" }}>
+          ₱{parseFloat(exp.amount).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </strong>
+      ),
+    },
+    {
+      header: "Description",
+      accessor: (exp) => (
+        <span style={{ fontSize: "13px", color: "var(--color-text-secondary)", maxWidth: "260px" }}>
+          {exp.description || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Recorded By",
+      accessor: (exp) => (
+        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          {exp.creator_name || exp.creator?.name || exp.recorded_by?.name || "System"}
+        </span>
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (exp) => (
+        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setSelectedExpense(exp)}
+          >
+            View
+          </Button>
+          {isOwner && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenEditModal(exp.id)}
+            >
+              Edit
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ];
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f9fafb" }}>
-      <Navbar />
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Toast */}
+      {toastMessage && (
+        <Toast
+          type={toastMessage.type}
+          message={toastMessage.text}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
 
-      <main style={{ maxWidth: "1200px", margin: "2rem auto", padding: "0 1.5rem" }}>
-        {/* Header and Quick Actions */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem", flexWrap: "wrap", gap: "1rem" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: "1.5rem", color: "#111827", fontWeight: "700" }}>Operating Expenses</h1>
-            <p style={{ margin: "0.25rem 0 0", color: "#6b7280", fontSize: "0.875rem" }}>
-              {isOwner ? "Track, manage, and audit store operational costs" : "Record operational store expenses"}
-            </p>
-          </div>
-
-          <div style={{ display: "flex", gap: "0.75rem" }}>
+      {/* Page Header */}
+      <PageHeader
+        title="Operating Expenses"
+        subtitle="Track daily store overhead, operational spending, and cost categories."
+        actions={
+          <div style={{ display: "flex", gap: "10px" }}>
             {isOwner && (
-              <button
+              <Button
+                variant="secondary"
+                size="md"
                 onClick={() => {
                   setCatError("");
                   setShowCategoryModal(true);
                 }}
-                style={{
-                  padding: "0.6rem 1rem",
-                  backgroundColor: "#ffffff",
-                  color: "#374151",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  fontWeight: "600",
-                  fontSize: "0.875rem",
-                  cursor: "pointer",
-                }}
               >
                 Manage Categories
-              </button>
+              </Button>
             )}
-
-            <button
-              onClick={handleOpenCreateModal}
-              style={{
-                padding: "0.6rem 1.2rem",
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "6px",
-                fontWeight: "600",
-                fontSize: "0.875rem",
-                cursor: "pointer",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-              }}
-            >
-              + Record Expense
-            </button>
+            {canRecord && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleOpenCreateModal}
+              >
+                + Record Expense
+              </Button>
+            )}
           </div>
+        }
+      />
+
+      {/* Filters Bar */}
+      <div
+        style={{
+          backgroundColor: "var(--color-surface)",
+          padding: "16px 20px",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-border)",
+          display: "flex",
+          gap: "14px",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: "200px" }}>
+          <input
+            type="text"
+            placeholder="Search description or recorded by..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            style={{
+              width: "100%",
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
         </div>
 
-        {/* Global Success Banner */}
-        {successMsg && (
-          <div
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="expense-cat-filter" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            Category:
+          </label>
+          <select
+            id="expense-cat-filter"
+            value={categoryFilter}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
             style={{
-              padding: "0.75rem 1rem",
-              backgroundColor: "#ecfdf5",
-              color: "#065f46",
-              borderRadius: "6px",
-              marginBottom: "1rem",
-              border: "1px solid #a7f3d0",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+              cursor: "pointer",
             }}
           >
-            <span>{successMsg}</span>
-            <button
-              onClick={() => setSuccessMsg("")}
-              style={{ background: "none", border: "none", color: "#065f46", cursor: "pointer", fontWeight: "700" }}
-            >
-              ✕
-            </button>
+            <option value="ALL">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name} {!c.is_active ? "(Inactive)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="expense-date-from" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            From:
+          </label>
+          <input
+            id="expense-date-from"
+            type="date"
+            value={dateFrom}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            style={{
+              height: "38px",
+              padding: "0 10px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="expense-date-to" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            To:
+          </label>
+          <input
+            id="expense-date-to"
+            type="date"
+            value={dateTo}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+            }}
+            style={{
+              height: "38px",
+              padding: "0 10px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
+        </div>
+
+        {(search || categoryFilter !== "ALL" || dateFrom || dateTo) && (
+          <Button variant="ghost" size="sm" onClick={handleResetFilters}>
+            Clear Filters
+          </Button>
+        )}
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: "12px 16px",
+            backgroundColor: "var(--color-danger-soft)",
+            border: "1px solid var(--color-danger)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-danger)",
+            fontSize: "13px",
+            fontWeight: 500,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* Expenses Table */}
+      <DataTable
+        columns={columns}
+        data={expenses}
+        loading={loading}
+        emptyTitle="No expenses found"
+        emptyMessage="There are no expense records matching your search or date criteria."
+        emptyAction={
+          canRecord && (
+            <Button variant="primary" size="sm" onClick={handleOpenCreateModal}>
+              + Record First Expense
+            </Button>
+          )
+        }
+      />
+
+      {/* Pagination */}
+      {!loading && expenses.length > 0 && pagination.pages > 1 && (
+        <Pagination
+          currentPage={pagination.page}
+          totalPages={pagination.pages}
+          totalItems={pagination.total}
+          onPageChange={(p) => setPagination((prev) => ({ ...prev, page: p }))}
+        />
+      )}
+
+      {/* Record / Edit Expense Modal */}
+      <Modal
+        isOpen={showExpenseModal}
+        onClose={() => setShowExpenseModal(false)}
+        title={modalMode === "CREATE" ? "Record Operating Expense" : "Edit Operating Expense"}
+        maxWidth="500px"
+      >
+        {formError && (
+          <div
+            role="alert"
+            style={{
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
+            }}
+          >
+            {formError}
           </div>
         )}
 
-        {/* KPI Summary Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
-          <div style={{ backgroundColor: "#ffffff", padding: "1.25rem", borderRadius: "8px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
-            <div style={{ fontSize: "0.8rem", color: "#6b7280", fontWeight: "600", textTransform: "uppercase" }}>
-              Total Filtered Expenses
-            </div>
-            <div style={{ fontSize: "1.75rem", fontWeight: "700", color: "#111827", marginTop: "0.25rem" }}>
-              ₱{totalFilteredAmount.toFixed(2)}
-            </div>
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-              Based on current filter view
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: "#ffffff", padding: "1.25rem", borderRadius: "8px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
-            <div style={{ fontSize: "0.8rem", color: "#6b7280", fontWeight: "600", textTransform: "uppercase" }}>
-              Expense Entries
-            </div>
-            <div style={{ fontSize: "1.75rem", fontWeight: "700", color: "#2563eb", marginTop: "0.25rem" }}>
-              {pagination.total}
-            </div>
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-              Matching transactions logged
-            </div>
-          </div>
-
-          <div style={{ backgroundColor: "#ffffff", padding: "1.25rem", borderRadius: "8px", border: "1px solid #e5e7eb", boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}>
-            <div style={{ fontSize: "0.8rem", color: "#6b7280", fontWeight: "600", textTransform: "uppercase" }}>
-              Active Categories
-            </div>
-            <div style={{ fontSize: "1.75rem", fontWeight: "700", color: "#059669", marginTop: "0.25rem" }}>
-              {activeCategoriesCount}
-            </div>
-            <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "0.25rem" }}>
-              Available for operational coding
-            </div>
-          </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            padding: "1rem",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
-            marginBottom: "1.5rem",
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "1rem",
-            alignItems: "flex-end",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-          }}
-        >
-          <div style={{ flex: "1 1 200px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Search Description or Category
-            </label>
-            <input
-              type="text"
-              placeholder="Search keyword..."
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
-
-          <div style={{ width: "200px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Category
-            </label>
-            <select
-              value={categoryFilter}
-              onChange={(e) => {
-                setCategoryFilter(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                backgroundColor: "#ffffff",
-                boxSizing: "border-box",
-              }}
+        <form onSubmit={handleExpenseFormSubmit}>
+          <FormField label="Category" required>
+            <Select
+              value={formData.category_id}
+              onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+              required
             >
-              <option value="ALL">All Categories</option>
-              {categories.map((c) => (
+              <option value="">-- Select Category --</option>
+              {availableCategories.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name} {!c.is_active ? "(Inactive)" : ""}
                 </option>
               ))}
-            </select>
+            </Select>
+          </FormField>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <FormField label="Amount (₱)" required>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                placeholder="0.00"
+                required
+                value={formData.amount}
+                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+              />
+            </FormField>
+
+            <FormField label="Expense Date" required>
+              <Input
+                type="date"
+                max={todayStr}
+                required
+                value={formData.expense_date}
+                onChange={(e) => setFormData({ ...formData, expense_date: e.target.value })}
+              />
+            </FormField>
           </div>
 
-          <div style={{ width: "150px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Date From
-            </label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                boxSizing: "border-box",
-              }}
+          <FormField label="Description (Optional)">
+            <Textarea
+              rows={3}
+              placeholder="e.g. Monthly store rent, Meralco electricity bill..."
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             />
-          </div>
+          </FormField>
 
-          <div style={{ width: "150px" }}>
-            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: "600", color: "#374151", marginBottom: "0.25rem" }}>
-              Date To
-            </label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-              }}
-              style={{
-                width: "100%",
-                padding: "0.5rem 0.75rem",
-                borderRadius: "6px",
-                border: "1px solid #d1d5db",
-                fontSize: "0.875rem",
-                boxSizing: "border-box",
-              }}
-            />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => setShowExpenseModal(false)}
+              disabled={formSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              loading={formSubmitting}
+            >
+              {formSubmitting ? "Saving..." : modalMode === "CREATE" ? "Record Expense" : "Save Changes"}
+            </Button>
           </div>
+        </form>
+      </Modal>
 
-          <button
-            onClick={handleResetFilters}
+      {/* Category Management Modal (OWNER only) */}
+      <Modal
+        isOpen={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        title="Expense Categories Management"
+        maxWidth="600px"
+      >
+        {catError && (
+          <div
+            role="alert"
             style={{
-              padding: "0.5rem 1rem",
-              backgroundColor: "#f3f4f6",
-              border: "1px solid #d1d5db",
-              borderRadius: "6px",
-              fontSize: "0.875rem",
-              color: "#374151",
-              cursor: "pointer",
-              fontWeight: "600",
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
             }}
           >
-            Reset
-          </button>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem" }}>
-            {error}
+            {catError}
           </div>
         )}
 
-        {/* Expenses Table */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "8px",
-            border: "1px solid #e5e7eb",
-            overflow: "hidden",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-          }}
-        >
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.875rem" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb", color: "#374151" }}>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Date</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Category</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Description</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "right" }}>Amount</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600" }}>Recorded By</th>
-                <th style={{ padding: "0.75rem 1rem", fontWeight: "600", textAlign: "center" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan="6" style={{ padding: "3rem", textAlign: "center", color: "#6b7280" }}>
-                    Loading operating expenses...
-                  </td>
-                </tr>
-              ) : expenses.length === 0 ? (
-                <tr>
-                  <td colSpan="6" style={{ padding: "3rem", textAlign: "center", color: "#9ca3af" }}>
-                    No expenses found matching the specified filters.
-                  </td>
-                </tr>
-              ) : (
-                expenses.map((exp) => (
-                  <tr key={exp.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                    <td style={{ padding: "0.75rem 1rem", fontWeight: "600", color: "#111827", whiteSpace: "nowrap" }}>
-                      {exp.expense_date}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "0.15rem 0.5rem",
-                          borderRadius: "4px",
-                          fontSize: "0.75rem",
-                          fontWeight: "600",
-                          backgroundColor: "#f3e8ff",
-                          color: "#6b21a8",
-                        }}
-                      >
-                        {exp.category_name}
-                      </span>
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", color: "#4b5563", maxWidth: "300px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {exp.description || <span style={{ color: "#9ca3af", fontStyle: "italic" }}>No description</span>}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", textAlign: "right", fontWeight: "700", color: "#111827", whiteSpace: "nowrap" }}>
-                      ₱{parseFloat(exp.amount).toFixed(2)}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", color: "#4b5563", whiteSpace: "nowrap" }}>
-                      {exp.creator_name}
-                    </td>
-                    <td style={{ padding: "0.75rem 1rem", textAlign: "center", whiteSpace: "nowrap" }}>
-                      <div style={{ display: "inline-flex", gap: "0.4rem" }}>
-                        <button
-                          onClick={() => handleViewDetail(exp.id)}
-                          style={{
-                            padding: "0.25rem 0.6rem",
-                            backgroundColor: "#eff6ff",
-                            color: "#2563eb",
-                            border: "1px solid #bfdbfe",
-                            borderRadius: "4px",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            cursor: "pointer",
-                          }}
-                        >
-                          View
-                        </button>
-                        {isOwner && (
-                          <button
-                            onClick={() => handleOpenEditModal(exp.id)}
-                            style={{
-                              padding: "0.25rem 0.6rem",
-                              backgroundColor: "#fffbeb",
-                              color: "#d97706",
-                              border: "1px solid #fde68a",
-                              borderRadius: "4px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Edit
-                          </button>
-                        )}
+        {/* Add Category Form */}
+        <form onSubmit={handleCreateCategory} style={{ marginBottom: "20px", paddingBottom: "20px", borderBottom: "1px solid var(--color-border)" }}>
+          <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text)", display: "block", marginBottom: "10px" }}>
+            Create New Category
+          </span>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+            <Input
+              placeholder="Category name (e.g. Packaging)"
+              value={newCatName}
+              onChange={(e) => setNewCatName(e.target.value)}
+              required
+            />
+            <Input
+              placeholder="Description (optional)"
+              value={newCatDesc}
+              onChange={(e) => setNewCatDesc(e.target.value)}
+            />
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button type="submit" variant="primary" size="sm" loading={catSubmitting}>
+              + Add Category
+            </Button>
+          </div>
+        </form>
+
+        {/* Categories List */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "320px", overflowY: "auto" }}>
+          {categories.map((c) => {
+            const isEditing = editingCatId === c.id;
+            return (
+              <div
+                key={c.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "8px 12px",
+                  backgroundColor: "var(--color-bg)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border-subtle)",
+                }}
+              >
+                {isEditing ? (
+                  <div style={{ display: "flex", gap: "8px", flex: 1, marginRight: "10px" }}>
+                    <Input
+                      value={editCatName}
+                      onChange={(e) => setEditCatName(e.target.value)}
+                      style={{ height: "32px", fontSize: "12px" }}
+                    />
+                    <Input
+                      value={editCatDesc}
+                      onChange={(e) => setEditCatDesc(e.target.value)}
+                      placeholder="Description"
+                      style={{ height: "32px", fontSize: "12px" }}
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--color-text)" }}>
+                      {c.name}
+                      {!c.is_active && (
+                        <span style={{ marginLeft: "6px", fontSize: "11px", color: "var(--color-danger)" }}>
+                          (Inactive)
+                        </span>
+                      )}
+                    </div>
+                    {c.description && (
+                      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                        {c.description}
                       </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-
-          {/* Pagination */}
-          <div
-            style={{
-              padding: "0.75rem 1rem",
-              borderTop: "1px solid #e5e7eb",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              fontSize: "0.875rem",
-              color: "#4b5563",
-            }}
-          >
-            <span>
-              Showing {expenses.length} of {pagination.total} expenses
-            </span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                disabled={pagination.page <= 1}
-                onClick={() => setPagination((prev) => ({ ...prev, page: prev.page - 1 }))}
-                style={{
-                  padding: "0.3rem 0.75rem",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "4px",
-                  backgroundColor: "#ffffff",
-                  cursor: pagination.page <= 1 ? "not-allowed" : "pointer",
-                  opacity: pagination.page <= 1 ? 0.5 : 1,
-                }}
-              >
-                Previous
-              </button>
-              <span style={{ padding: "0.3rem 0.5rem" }}>
-                Page {pagination.page} of {pagination.pages}
-              </span>
-              <button
-                disabled={pagination.page >= pagination.pages}
-                onClick={() => setPagination((prev) => ({ ...prev, page: prev.page + 1 }))}
-                style={{
-                  padding: "0.3rem 0.75rem",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "4px",
-                  backgroundColor: "#ffffff",
-                  cursor: pagination.page >= pagination.pages ? "not-allowed" : "pointer",
-                  opacity: pagination.page >= pagination.pages ? 0.5 : 1,
-                }}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
-
-      {/* Record / Edit Expense Modal */}
-      {showExpenseModal && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "1.5rem",
-              width: "500px",
-              maxWidth: "95%",
-              boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-              maxHeight: "90vh",
-              overflowY: "auto",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#111827" }}>
-                {modalMode === "CREATE" ? "Record New Expense" : "Edit Expense Record"}
-              </h2>
-              <button
-                onClick={() => setShowExpenseModal(false)}
-                style={{ background: "none", border: "none", fontSize: "1.25rem", cursor: "pointer" }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {formError && (
-              <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem", fontSize: "0.875rem" }}>
-                {formError}
-              </div>
-            )}
-
-            <form onSubmit={handleSubmitExpense}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                {/* Category Select */}
-                <div>
-                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.3rem" }}>
-                    Category <span style={{ color: "#dc2626" }}>*</span>
-                  </label>
-                  <select
-                    required
-                    value={formData.category_id}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, category_id: e.target.value }))}
-                    disabled={formSubmitting}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem 0.75rem",
-                      borderRadius: "6px",
-                      border: "1px solid #d1d5db",
-                      fontSize: "0.875rem",
-                      backgroundColor: "#ffffff",
-                      boxSizing: "border-box",
-                    }}
-                  >
-                    <option value="" disabled>Select an active category...</option>
-                    {categories
-                      .filter((c) => c.is_active || (modalMode === "EDIT" && c.id === formData.category_id))
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name} {!c.is_active ? "(Inactive)" : ""}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-
-                {/* Amount and Expense Date side-by-side */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.3rem" }}>
-                      Amount (₱) <span style={{ color: "#dc2626" }}>*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      required
-                      placeholder="0.00"
-                      value={formData.amount}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, amount: e.target.value }))}
-                      disabled={formSubmitting}
-                      style={{
-                        width: "100%",
-                        padding: "0.5rem 0.75rem",
-                        borderRadius: "6px",
-                        border: "1px solid #d1d5db",
-                        fontSize: "0.875rem",
-                        boxSizing: "border-box",
-                      }}
-                    />
+                    )}
                   </div>
+                )}
 
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.3rem" }}>
-                      Expense Date <span style={{ color: "#dc2626" }}>*</span>
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      max={todayStr}
-                      value={formData.expense_date}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, expense_date: e.target.value }))}
-                      disabled={formSubmitting}
-                      style={{
-                        width: "100%",
-                        padding: "0.5rem 0.75rem",
-                        borderRadius: "6px",
-                        border: "1px solid #d1d5db",
-                        fontSize: "0.875rem",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {/* Description */}
-                <div>
-                  <label style={{ display: "block", fontSize: "0.8rem", fontWeight: "600", color: "#374151", marginBottom: "0.3rem" }}>
-                    Description / Remarks (Optional)
-                  </label>
-                  <textarea
-                    rows="3"
-                    placeholder="e.g. Electric power bill for March store operations..."
-                    value={formData.description}
-                    onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
-                    disabled={formSubmitting}
-                    style={{
-                      width: "100%",
-                      padding: "0.5rem 0.75rem",
-                      borderRadius: "6px",
-                      border: "1px solid #d1d5db",
-                      fontSize: "0.875rem",
-                      boxSizing: "border-box",
-                      fontFamily: "inherit",
-                    }}
-                  />
-                </div>
-
-                {/* Audit notice */}
-                <div style={{ fontSize: "0.75rem", color: "#6b7280", fontStyle: "italic" }}>
-                  ℹ Changes to expense records are logged with your user identity for financial integrity.
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem", marginTop: "0.5rem" }}>
-                  <button
-                    type="button"
-                    onClick={() => setShowExpenseModal(false)}
-                    disabled={formSubmitting}
-                    style={{
-                      padding: "0.5rem 1rem",
-                      backgroundColor: "#f3f4f6",
-                      border: "1px solid #d1d5db",
-                      borderRadius: "6px",
-                      fontWeight: "600",
-                      cursor: "pointer",
-                      fontSize: "0.875rem",
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={formSubmitting}
-                    style={{
-                      padding: "0.5rem 1.25rem",
-                      backgroundColor: "#2563eb",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "6px",
-                      fontWeight: "600",
-                      cursor: formSubmitting ? "not-allowed" : "pointer",
-                      fontSize: "0.875rem",
-                    }}
-                  >
-                    {formSubmitting ? "Saving..." : modalMode === "CREATE" ? "Save Expense" : "Update Record"}
-                  </button>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  {isEditing ? (
+                    <>
+                      <Button variant="primary" size="sm" onClick={() => handleSaveEditCat(c.id)}>
+                        Save
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => setEditingCatId(null)}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="secondary" size="sm" onClick={() => handleStartEditCat(c)}>
+                        Edit
+                      </Button>
+                      <Button
+                        variant={c.is_active ? "danger" : "secondary"}
+                        size="sm"
+                        onClick={() => handleToggleCatStatus(c.id, c.is_active)}
+                      >
+                        {c.is_active ? "Deactivate" : "Activate"}
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
-            </form>
-          </div>
+            );
+          })}
         </div>
-      )}
 
-      {/* Expense Detail View Modal */}
-      {selectedExpense && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "1.5rem",
-              width: "480px",
-              maxWidth: "95%",
-              boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#111827" }}>
-                Expense Details #{selectedExpense.id}
-              </h2>
-              <button
-                onClick={() => setSelectedExpense(null)}
-                style={{ background: "none", border: "none", fontSize: "1.25rem", cursor: "pointer" }}
-              >
-                ✕
-              </button>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "20px" }}>
+          <Button variant="secondary" size="md" onClick={() => setShowCategoryModal(false)}>
+            Close
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Expense Detail Drawer */}
+      <Drawer
+        isOpen={Boolean(selectedExpense)}
+        onClose={() => setSelectedExpense(null)}
+        title="Expense Record Details"
+        subtitle={selectedExpense ? `Logged on ${selectedExpense.expense_date}` : ""}
+        width="440px"
+      >
+        {selectedExpense && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div style={{ padding: "16px", backgroundColor: "var(--color-bg)", borderRadius: "var(--radius-md)" }}>
+              <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>Amount Spent</span>
+              <div style={{ fontSize: "28px", fontWeight: 800, color: "var(--color-danger)", marginTop: "4px" }}>
+                ₱{parseFloat(selectedExpense.amount).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", fontSize: "0.875rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f3f4f6", paddingBottom: "0.5rem" }}>
-                <span style={{ color: "#6b7280" }}>Category:</span>
-                <span style={{ fontWeight: "600", color: "#111827" }}>{selectedExpense.category?.name}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f3f4f6", paddingBottom: "0.5rem" }}>
-                <span style={{ color: "#6b7280" }}>Amount:</span>
-                <span style={{ fontWeight: "700", color: "#111827", fontSize: "1.1rem" }}>₱{parseFloat(selectedExpense.amount).toFixed(2)}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f3f4f6", paddingBottom: "0.5rem" }}>
-                <span style={{ color: "#6b7280" }}>Expense Date:</span>
-                <span style={{ fontWeight: "500" }}>{selectedExpense.expense_date}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f3f4f6", paddingBottom: "0.5rem" }}>
-                <span style={{ color: "#6b7280" }}>Recorded By:</span>
-                <span>{selectedExpense.creator?.name} ({selectedExpense.creator?.email})</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", borderBottom: "1px solid #f3f4f6", paddingBottom: "0.5rem" }}>
-                <span style={{ color: "#6b7280" }}>Created Timestamp:</span>
-                <span>{new Date(selectedExpense.created_at).toLocaleString()}</span>
-              </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px", fontSize: "13px" }}>
               <div>
-                <span style={{ color: "#6b7280", display: "block", marginBottom: "0.25rem" }}>Description / Remarks:</span>
-                <div style={{ padding: "0.5rem", backgroundColor: "#f9fafb", borderRadius: "4px", color: "#374151" }}>
+                <span style={{ color: "var(--color-text-secondary)" }}>Category:</span>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", marginTop: "2px" }}>
+                  {selectedExpense.category_name}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Date:</span>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", marginTop: "2px" }}>
+                  {selectedExpense.expense_date}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Recorded By:</span>
+                <div style={{ fontWeight: 600, color: "var(--color-text)", marginTop: "2px" }}>
+                  {selectedExpense.creator?.name || selectedExpense.creator_name || selectedExpense.recorded_by?.name || "System"} ({selectedExpense.creator?.email || selectedExpense.recorded_by?.email || "—"})
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Description:</span>
+                <div style={{ color: "var(--color-text)", marginTop: "2px", lineHeight: 1.5 }}>
                   {selectedExpense.description || "No description provided."}
                 </div>
               </div>
+
+              {selectedExpense.created_at && (
+                <div>
+                  <span style={{ color: "var(--color-text-secondary)" }}>Created At:</span>
+                  <div style={{ color: "var(--color-text)", marginTop: "2px" }}>
+                    {new Date(selectedExpense.created_at).toLocaleString()}
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setSelectedExpense(null)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor: "#f3f4f6",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Manage Categories Modal (OWNER only) */}
-      {showCategoryModal && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "1.5rem",
-              width: "620px",
-              maxWidth: "95%",
-              boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-              maxHeight: "90vh",
-              overflowY: "auto",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#111827" }}>
-                Manage Expense Categories
-              </h2>
-              <button
-                onClick={() => setShowCategoryModal(false)}
-                style={{ background: "none", border: "none", fontSize: "1.25rem", cursor: "pointer" }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {catError && (
-              <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem", fontSize: "0.875rem" }}>
-                {catError}
+            {isOwner && (
+              <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid var(--color-border)" }}>
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={() => {
+                    const id = selectedExpense.id;
+                    setSelectedExpense(null);
+                    handleOpenEditModal(id);
+                  }}
+                  style={{ width: "100%" }}
+                >
+                  Edit This Expense
+                </Button>
               </div>
             )}
-
-            {/* Inline Create Category Form */}
-            <form onSubmit={handleAddCategory} style={{ backgroundColor: "#f9fafb", padding: "1rem", borderRadius: "6px", marginBottom: "1.5rem", border: "1px solid #e5e7eb" }}>
-              <div style={{ fontWeight: "600", fontSize: "0.875rem", color: "#374151", marginBottom: "0.5rem" }}>
-                Add New Category
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "0.5rem", alignItems: "flex-end" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.75rem", color: "#4b5563", marginBottom: "0.2rem" }}>Name *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Cleaning Supplies"
-                    value={newCatName}
-                    onChange={(e) => setNewCatName(e.target.value)}
-                    disabled={catSubmitting}
-                    style={{ width: "100%", padding: "0.4rem 0.6rem", borderRadius: "4px", border: "1px solid #d1d5db", fontSize: "0.85rem", boxSizing: "border-box" }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.75rem", color: "#4b5563", marginBottom: "0.2rem" }}>Description</label>
-                  <input
-                    type="text"
-                    placeholder="Optional details"
-                    value={newCatDesc}
-                    onChange={(e) => setNewCatDesc(e.target.value)}
-                    disabled={catSubmitting}
-                    style={{ width: "100%", padding: "0.4rem 0.6rem", borderRadius: "4px", border: "1px solid #d1d5db", fontSize: "0.85rem", boxSizing: "border-box" }}
-                  />
-                </div>
-                <button
-                  type="submit"
-                  disabled={catSubmitting}
-                  style={{
-                    padding: "0.45rem 1rem",
-                    backgroundColor: "#2563eb",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "4px",
-                    fontWeight: "600",
-                    fontSize: "0.85rem",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  Add
-                </button>
-              </div>
-            </form>
-
-            {/* Category List */}
-            <div style={{ fontWeight: "600", fontSize: "0.875rem", color: "#374151", marginBottom: "0.5rem" }}>
-              Existing Categories ({categories.length})
-            </div>
-            <div style={{ border: "1px solid #e5e7eb", borderRadius: "6px", overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-                <thead>
-                  <tr style={{ backgroundColor: "#f9fafb", borderBottom: "1px solid #e5e7eb", textAlign: "left", color: "#374151" }}>
-                    <th style={{ padding: "0.5rem 0.75rem" }}>Category</th>
-                    <th style={{ padding: "0.5rem 0.75rem" }}>Status</th>
-                    <th style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categories.map((c) => (
-                    <tr key={c.id} style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>
-                        {editingCatId === c.id ? (
-                          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-                            <input
-                              type="text"
-                              value={editCatName}
-                              onChange={(e) => setEditCatName(e.target.value)}
-                              style={{ padding: "0.2rem 0.4rem", borderRadius: "4px", border: "1px solid #d1d5db", fontSize: "0.85rem" }}
-                            />
-                            <input
-                              type="text"
-                              placeholder="Description"
-                              value={editCatDesc}
-                              onChange={(e) => setEditCatDesc(e.target.value)}
-                              style={{ padding: "0.2rem 0.4rem", borderRadius: "4px", border: "1px solid #d1d5db", fontSize: "0.85rem" }}
-                            />
-                            <button
-                              onClick={() => handleSaveEditCat(c.id)}
-                              style={{ padding: "0.2rem 0.5rem", backgroundColor: "#059669", color: "#ffffff", border: "none", borderRadius: "4px", fontSize: "0.75rem", cursor: "pointer" }}
-                            >
-                              Save
-                            </button>
-                            <button
-                              onClick={() => setEditingCatId(null)}
-                              style={{ padding: "0.2rem 0.5rem", backgroundColor: "#f3f4f6", border: "1px solid #d1d5db", borderRadius: "4px", fontSize: "0.75rem", cursor: "pointer" }}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div>
-                            <div style={{ fontWeight: "600", color: "#111827" }}>{c.name}</div>
-                            {c.description && <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{c.description}</div>}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.5rem 0.75rem" }}>
-                        <span
-                          style={{
-                            display: "inline-block",
-                            padding: "0.15rem 0.5rem",
-                            borderRadius: "9999px",
-                            fontSize: "0.75rem",
-                            fontWeight: "600",
-                            backgroundColor: c.is_active ? "#ecfdf5" : "#f3f4f6",
-                            color: c.is_active ? "#065f46" : "#6b7280",
-                          }}
-                        >
-                          {c.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td style={{ padding: "0.5rem 0.75rem", textAlign: "right" }}>
-                        <div style={{ display: "inline-flex", gap: "0.4rem" }}>
-                          {editingCatId !== c.id && (
-                            <button
-                              onClick={() => handleStartEditCat(c)}
-                              style={{
-                                padding: "0.2rem 0.5rem",
-                                backgroundColor: "#f3f4f6",
-                                border: "1px solid #d1d5db",
-                                borderRadius: "4px",
-                                fontSize: "0.75rem",
-                                cursor: "pointer",
-                              }}
-                            >
-                              Edit
-                            </button>
-                          )}
-                          <button
-                            onClick={() => handleToggleCategoryStatus(c)}
-                            style={{
-                              padding: "0.2rem 0.5rem",
-                              backgroundColor: c.is_active ? "#fee2e2" : "#ecfdf5",
-                              color: c.is_active ? "#991b1b" : "#065f46",
-                              border: "none",
-                              borderRadius: "4px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {c.is_active ? "Deactivate" : "Reactivate"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div style={{ marginTop: "1.5rem", display: "flex", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setShowCategoryModal(false)}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor: "#f3f4f6",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                }}
-              >
-                Done
-              </button>
-            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Drawer>
     </div>
   );
 };

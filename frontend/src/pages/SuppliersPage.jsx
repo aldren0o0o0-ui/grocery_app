@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import {
   getSuppliersApi,
@@ -7,6 +6,19 @@ import {
   updateSupplierApi,
   setSupplierStatusApi,
 } from "../modules/suppliers/api";
+import {
+  PageHeader,
+  Button,
+  DataTable,
+  Pagination,
+  StatusBadge,
+  Modal,
+  FormField,
+  Input,
+  Textarea,
+  ConfirmDialog,
+  Toast,
+} from "../components/common";
 
 export const SuppliersPage = () => {
   const { user } = useAuth();
@@ -18,6 +30,7 @@ export const SuppliersPage = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [toastMessage, setToastMessage] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Modal State
@@ -34,6 +47,13 @@ export const SuppliersPage = () => {
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    supplier: null,
+    loading: false,
+  });
+
   // Load suppliers
   useEffect(() => {
     let ignore = false;
@@ -49,12 +69,16 @@ export const SuppliersPage = () => {
 
         const res = await getSuppliersApi(params);
         if (!ignore) {
-          if (res.status === "success") {
-            setSuppliers(res.data.items || []);
-            setPagination(res.data.pagination || { page: 1, per_page: 20, total: 0, pages: 1 });
-          } else {
-            setError(res.message || "Failed to load suppliers.");
-          }
+          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          const pag = res?.data?.pagination || res?.pagination || {
+            page: pagination.page,
+            per_page: 20,
+            total: items.length,
+            pages: 1,
+          };
+          setSuppliers(items);
+          setPagination(pag);
+          setError("");
         }
       } catch (err) {
         if (!ignore) {
@@ -128,15 +152,17 @@ export const SuppliersPage = () => {
       name: formData.name.trim(),
       contact_person: formData.contact_person?.trim() || null,
       phone: formData.phone?.trim() || null,
-      email: formData.email?.trim() || null,
+      email: formData.email?.trim() ? formData.email.trim().toLowerCase() : null,
       address: formData.address?.trim() || null,
     };
 
     try {
       if (modalMode === "create") {
         await createSupplierApi(payload);
+        setToastMessage({ type: "success", text: `Supplier "${payload.name}" created successfully.` });
       } else {
         await updateSupplierApi(selectedId, payload);
+        setToastMessage({ type: "success", text: `Supplier "${payload.name}" updated successfully.` });
       }
       setIsModalOpen(false);
       setLoading(true);
@@ -148,558 +174,369 @@ export const SuppliersPage = () => {
     }
   };
 
-  const handleToggleStatus = async (supplier) => {
-    const action = supplier.is_active ? "deactivate" : "activate";
-    const confirmMessage = supplier.is_active
-      ? `Deactivate "${supplier.name}"? It will no longer be available for new purchases. Historical records remain unaffected.`
-      : `Reactivate "${supplier.name}" for purchases?`;
+  const handleToggleStatusClick = (supplier) => {
+    setConfirmDialog({
+      isOpen: true,
+      supplier,
+      loading: false,
+    });
+  };
 
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
+  const handleConfirmToggleStatus = async () => {
+    const supplier = confirmDialog.supplier;
+    if (!supplier) return;
+
+    setConfirmDialog((prev) => ({ ...prev, loading: true }));
+    const newStatus = !supplier.is_active;
+    const action = newStatus ? "activated" : "deactivated";
 
     try {
-      await setSupplierStatusApi(supplier.id, !supplier.is_active);
+      await setSupplierStatusApi(supplier.id, newStatus);
+      setToastMessage({ type: "success", text: `Supplier "${supplier.name}" ${action}.` });
+      setConfirmDialog({ isOpen: false, supplier: null, loading: false });
       setLoading(true);
       setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      alert(err.response?.data?.message || `Failed to ${action} supplier.`);
+      setToastMessage({
+        type: "error",
+        text: err.response?.data?.message || `Failed to update supplier status.`,
+      });
+      setConfirmDialog((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f8fafc", fontFamily: "system-ui, -apple-system, sans-serif" }}>
-      <Navbar />
-
-      <main style={{ maxWidth: "1280px", margin: "2rem auto", padding: "0 1.5rem" }}>
-        {/* Header section */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-          <div>
-            <h1 style={{ fontSize: "1.75rem", fontWeight: "700", color: "#0f172a", margin: 0 }}>
-              Supplier Management
-            </h1>
-            <p style={{ color: "#64748b", margin: "0.25rem 0 0 0", fontSize: "0.875rem" }}>
-              Maintain authorized supplier identities, vendor contacts, and purchasing status.
-            </p>
+  const columns = [
+    {
+      header: "Supplier Name",
+      accessor: (s) => (
+        <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{s.name}</div>
+      ),
+    },
+    {
+      header: "Contact Person",
+      accessor: (s) => (
+        <span style={{ color: "var(--color-text-secondary)", fontSize: "13px" }}>
+          {s.contact_person || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Phone",
+      accessor: (s) => (
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--color-text)" }}>
+          {s.phone || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Email",
+      accessor: (s) => (
+        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          {s.email || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Address",
+      accessor: (s) => (
+        <span style={{ fontSize: "12px", color: "var(--color-text-muted)", maxWidth: "200px" }}>
+          {s.address || "—"}
+        </span>
+      ),
+    },
+    {
+      header: "Status",
+      accessor: (s) => (
+        <StatusBadge
+          status={s.is_active ? "Active" : "Inactive"}
+          variant={s.is_active ? "success" : "neutral"}
+        />
+      ),
+    },
+    {
+      header: "Actions",
+      align: "right",
+      accessor: (s) =>
+        canManage ? (
+          <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenEdit(s)}
+            >
+              Edit
+            </Button>
+            <Button
+              variant={s.is_active ? "danger" : "secondary"}
+              size="sm"
+              onClick={() => handleToggleStatusClick(s)}
+            >
+              {s.is_active ? "Deactivate" : "Activate"}
+            </Button>
           </div>
-          {canManage && (
-            <button
+        ) : (
+          <span style={{ fontSize: "12px", color: "var(--color-text-muted)", fontStyle: "italic" }}>
+            View Only
+          </span>
+        ),
+    },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Toast */}
+      {toastMessage && (
+        <Toast
+          type={toastMessage.type}
+          message={toastMessage.text}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
+
+      {/* Page Header */}
+      <PageHeader
+        title="Supplier Directory"
+        subtitle="Maintain vendor partner profiles, contact info, and purchasing integration."
+        actions={
+          canManage && (
+            <Button
               id="btn-add-supplier"
+              variant="primary"
+              size="md"
               onClick={handleOpenCreate}
-              style={{
-                backgroundColor: "#2563eb",
-                color: "#ffffff",
-                border: "none",
-                borderRadius: "8px",
-                padding: "0.6rem 1.25rem",
-                fontWeight: "600",
-                fontSize: "0.875rem",
-                cursor: "pointer",
-                boxShadow: "0 2px 4px rgba(37, 99, 235, 0.2)",
-              }}
             >
               + Add Supplier
-            </button>
-          )}
-        </div>
+            </Button>
+          )
+        }
+      />
 
-        {/* Filters Bar */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            padding: "1rem 1.25rem",
-            borderRadius: "10px",
-            border: "1px solid #e2e8f0",
-            marginBottom: "1.5rem",
-            display: "flex",
-            gap: "1rem",
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "0.5rem", flex: 1, minWidth: "260px" }}>
-            <input
-              id="supplier-search-input"
-              type="text"
-              placeholder="Search by supplier name, contact, phone, or email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              style={{
-                flex: 1,
-                padding: "0.5rem 0.75rem",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                fontSize: "0.875rem",
-                outline: "none",
-              }}
-            />
-            <button
-              type="submit"
-              id="btn-supplier-search"
-              style={{
-                backgroundColor: "#f1f5f9",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                padding: "0.5rem 1rem",
-                fontSize: "0.875rem",
-                fontWeight: "600",
-                color: "#334155",
-                cursor: "pointer",
-              }}
-            >
-              Search
-            </button>
-          </form>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <span style={{ fontSize: "0.875rem", color: "#64748b", fontWeight: "500" }}>Status:</span>
-            <select
-              id="supplier-status-filter"
-              value={statusFilter}
-              onChange={(e) => {
-                setStatusFilter(e.target.value);
-                setPagination((prev) => ({ ...prev, page: 1 }));
-                setLoading(true);
-              }}
-              style={{
-                padding: "0.5rem 0.75rem",
-                border: "1px solid #cbd5e1",
-                borderRadius: "6px",
-                fontSize: "0.875rem",
-                backgroundColor: "#ffffff",
-                color: "#334155",
-                cursor: "pointer",
-              }}
-            >
-              <option value="all">All Suppliers</option>
-              <option value="active">Active Only</option>
-              <option value="inactive">Inactive Only</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <div
+      {/* Filters Bar */}
+      <div
+        style={{
+          backgroundColor: "var(--color-surface)",
+          padding: "16px 20px",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-border)",
+          display: "flex",
+          gap: "14px",
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "8px", flex: 1, minWidth: "260px" }}>
+          <input
+            id="supplier-search-input"
+            type="text"
+            placeholder="Search supplier name, contact, phone, email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
             style={{
-              padding: "0.75rem 1rem",
-              backgroundColor: "#fef2f2",
-              border: "1px solid #fecaca",
-              borderRadius: "8px",
-              color: "#b91c1c",
-              fontSize: "0.875rem",
-              marginBottom: "1.5rem",
+              flex: 1,
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+            }}
+          />
+          <Button
+            type="submit"
+            id="btn-supplier-search"
+            variant="secondary"
+            size="md"
+          >
+            Search
+          </Button>
+        </form>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <label htmlFor="supplier-status-filter" style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: 500 }}>
+            Status:
+          </label>
+          <select
+            id="supplier-status-filter"
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value);
+              setPagination((prev) => ({ ...prev, page: 1 }));
+              setLoading(true);
+            }}
+            style={{
+              height: "38px",
+              padding: "0 12px",
+              border: "1px solid var(--color-border)",
+              borderRadius: "var(--radius-md)",
+              fontSize: "13px",
+              color: "var(--color-text)",
+              backgroundColor: "var(--color-surface)",
+              outline: "none",
+              cursor: "pointer",
             }}
           >
-            {error}
+            <option value="all">All</option>
+            <option value="active">Active Only</option>
+            <option value="inactive">Inactive Only</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            padding: "12px 16px",
+            backgroundColor: "var(--color-danger-soft)",
+            border: "1px solid var(--color-danger)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-danger)",
+            fontSize: "13px",
+            fontWeight: 500,
+          }}
+        >
+          ⚠️ {error}
+        </div>
+      )}
+
+      {/* Suppliers Table */}
+      <DataTable
+        columns={columns}
+        data={suppliers}
+        loading={loading}
+        emptyTitle="No suppliers found"
+        emptyMessage="There are no suppliers matching your search or filter criteria."
+        emptyAction={
+          canManage && (
+            <Button variant="primary" size="sm" onClick={handleOpenCreate}>
+              + Add First Supplier
+            </Button>
+          )
+        }
+      />
+
+      {/* Pagination */}
+      {!loading && suppliers.length > 0 && pagination.pages > 1 && (
+        <Pagination
+          currentPage={pagination.page}
+          totalPages={pagination.pages}
+          totalItems={pagination.total}
+          onPageChange={(p) => {
+            setPagination((prev) => ({ ...prev, page: p }));
+            setLoading(true);
+          }}
+        />
+      )}
+
+      {/* Modal Dialog for Create/Edit */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        title={modalMode === "create" ? "Add New Supplier" : "Edit Supplier"}
+        maxWidth="520px"
+      >
+        {formError && (
+          <div
+            role="alert"
+            style={{
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
+            }}
+          >
+            {formError}
           </div>
         )}
 
-        {/* Suppliers Table */}
-        <div
-          style={{
-            backgroundColor: "#ffffff",
-            borderRadius: "10px",
-            border: "1px solid #e2e8f0",
-            overflow: "hidden",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-          }}
-        >
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.875rem" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Supplier Name</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Contact Person</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Phone</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Email</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600" }}>Status</th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600", textAlign: "center" }}>
-                  Purchases
-                </th>
-                <th style={{ padding: "0.875rem 1rem", color: "#475569", fontWeight: "600", textAlign: "right" }}>
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={7} style={{ padding: "2.5rem", textAlign: "center", color: "#64748b" }}>
-                    Loading suppliers...
-                  </td>
-                </tr>
-              ) : suppliers.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ padding: "2.5rem", textAlign: "center", color: "#64748b" }}>
-                    No suppliers found matching criteria.
-                  </td>
-                </tr>
-              ) : (
-                suppliers.map((s) => (
-                  <tr
-                    key={s.id}
-                    style={{
-                      borderBottom: "1px solid #f1f5f9",
-                      transition: "background-color 0.15s ease",
-                    }}
-                  >
-                    <td style={{ padding: "0.875rem 1rem" }}>
-                      <div style={{ fontWeight: "600", color: "#1e293b" }}>{s.name}</div>
-                      {s.address && (
-                        <div style={{ fontSize: "0.75rem", color: "#94a3b8", marginTop: "0.15rem" }}>
-                          {s.address}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: "0.875rem 1rem", color: "#334155" }}>
-                      {s.contact_person || "—"}
-                    </td>
-                    <td style={{ padding: "0.875rem 1rem", fontFamily: "monospace", color: "#475569" }}>
-                      {s.phone || "—"}
-                    </td>
-                    <td style={{ padding: "0.875rem 1rem", color: "#2563eb", fontSize: "0.8125rem" }}>
-                      {s.email || "—"}
-                    </td>
-                    <td style={{ padding: "0.875rem 1rem" }}>
-                      <span
-                        style={{
-                          display: "inline-block",
-                          padding: "0.2rem 0.55rem",
-                          borderRadius: "9999px",
-                          fontSize: "0.75rem",
-                          fontWeight: "600",
-                          backgroundColor: s.is_active ? "#dcfce7" : "#f1f5f9",
-                          color: s.is_active ? "#15803d" : "#64748b",
-                        }}
-                      >
-                        {s.is_active ? "Active" : "Inactive"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "0.875rem 1rem", textAlign: "center", color: "#475569" }}>
-                      <span
-                        style={{
-                          backgroundColor: "#f1f5f9",
-                          padding: "0.15rem 0.45rem",
-                          borderRadius: "4px",
-                          fontFamily: "monospace",
-                          fontSize: "0.75rem",
-                        }}
-                      >
-                        {s.purchase_count ?? 0}
-                      </span>
-                    </td>
-                    <td style={{ padding: "0.875rem 1rem", textAlign: "right" }}>
-                      {canManage ? (
-                        <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
-                          <button
-                            id={`btn-edit-supplier-${s.id}`}
-                            onClick={() => handleOpenEdit(s)}
-                            style={{
-                              padding: "0.35rem 0.75rem",
-                              backgroundColor: "#f8fafc",
-                              border: "1px solid #cbd5e1",
-                              borderRadius: "6px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              color: "#334155",
-                              cursor: "pointer",
-                            }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            id={`btn-status-supplier-${s.id}`}
-                            onClick={() => handleToggleStatus(s)}
-                            style={{
-                              padding: "0.35rem 0.75rem",
-                              backgroundColor: s.is_active ? "#fef2f2" : "#f0fdf4",
-                              border: s.is_active ? "1px solid #fecaca" : "1px solid #bbf7d0",
-                              borderRadius: "6px",
-                              fontSize: "0.75rem",
-                              fontWeight: "600",
-                              color: s.is_active ? "#dc2626" : "#16a34a",
-                              cursor: "pointer",
-                            }}
-                          >
-                            {s.is_active ? "Deactivate" : "Activate"}
-                          </button>
-                        </div>
-                      ) : (
-                        <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontStyle: "italic" }}>
-                          View Only
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        <form onSubmit={handleFormSubmit}>
+          <FormField label="Supplier Name" required id="modal-supplier-name">
+            <Input
+              required
+              placeholder="e.g. Fresh Valley Farms Inc."
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            />
+          </FormField>
 
-          {/* Pagination Controls */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "0.875rem 1.25rem",
-              backgroundColor: "#fafafa",
-              borderTop: "1px solid #e2e8f0",
-              fontSize: "0.875rem",
-              color: "#64748b",
-            }}
-          >
-            <span>
-              Showing {suppliers.length} of {pagination.total} suppliers
-            </span>
-            <div style={{ display: "flex", gap: "0.5rem" }}>
-              <button
-                disabled={pagination.page <= 1}
-                onClick={() => {
-                  setPagination((prev) => ({ ...prev, page: prev.page - 1 }));
-                  setLoading(true);
-                }}
-                style={{
-                  padding: "0.35rem 0.75rem",
-                  backgroundColor: pagination.page <= 1 ? "#f1f5f9" : "#ffffff",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "6px",
-                  fontSize: "0.75rem",
-                  fontWeight: "600",
-                  color: pagination.page <= 1 ? "#94a3b8" : "#334155",
-                  cursor: pagination.page <= 1 ? "not-allowed" : "pointer",
-                }}
-              >
-                Previous
-              </button>
-              <span style={{ padding: "0.35rem 0.5rem", fontWeight: "600" }}>
-                Page {pagination.page} of {pagination.pages || 1}
-              </span>
-              <button
-                disabled={pagination.page >= pagination.pages}
-                onClick={() => {
-                  setPagination((prev) => ({ ...prev, page: prev.page + 1 }));
-                  setLoading(true);
-                }}
-                style={{
-                  padding: "0.35rem 0.75rem",
-                  backgroundColor: pagination.page >= pagination.pages ? "#f1f5f9" : "#ffffff",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "6px",
-                  fontSize: "0.75rem",
-                  fontWeight: "600",
-                  color: pagination.page >= pagination.pages ? "#94a3b8" : "#334155",
-                  cursor: pagination.page >= pagination.pages ? "not-allowed" : "pointer",
-                }}
-              >
-                Next
-              </button>
-            </div>
+          <FormField label="Contact Person (Optional)" id="modal-supplier-contact">
+            <Input
+              placeholder="e.g. Maria Santos"
+              value={formData.contact_person}
+              onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
+            />
+          </FormField>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+            <FormField label="Phone (Optional)" id="modal-supplier-phone">
+              <Input
+                placeholder="e.g. +63 917 123 4567"
+                value={formData.phone}
+                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              />
+            </FormField>
+
+            <FormField label="Email (Optional)" id="modal-supplier-email">
+              <Input
+                type="email"
+                placeholder="e.g. sales@freshvalley.com"
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              />
+            </FormField>
           </div>
-        </div>
-      </main>
 
-      {/* Add / Edit Supplier Modal */}
-      {isModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(15, 23, 42, 0.5)",
-            backdropFilter: "blur(2px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: "1rem",
-            zIndex: 100,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "12px",
-              padding: "1.75rem",
-              width: "100%",
-              maxWidth: "520px",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
-            }}
-          >
-            <h2 style={{ fontSize: "1.25rem", fontWeight: "700", color: "#0f172a", marginTop: 0, marginBottom: "1rem" }}>
-              {modalMode === "create" ? "Add New Supplier" : "Edit Supplier Profile"}
-            </h2>
+          <FormField label="Business Address (Optional)" id="modal-supplier-address">
+            <Textarea
+              rows={3}
+              placeholder="e.g. Building 4, Food Terminal Complex, Taguig City"
+              value={formData.address}
+              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+            />
+          </FormField>
 
-            {formError && (
-              <div
-                style={{
-                  padding: "0.5rem 0.75rem",
-                  backgroundColor: "#fef2f2",
-                  border: "1px solid #fecaca",
-                  borderRadius: "6px",
-                  color: "#b91c1c",
-                  fontSize: "0.8125rem",
-                  marginBottom: "1rem",
-                }}
-              >
-                {formError}
-              </div>
-            )}
-
-            <form onSubmit={handleFormSubmit}>
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                  Supplier Name *
-                </label>
-                <input
-                  id="modal-supplier-name"
-                  type="text"
-                  required
-                  placeholder="e.g. San Miguel Foods Inc."
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "0.5rem 0.75rem",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                    Contact Person
-                  </label>
-                  <input
-                    id="modal-supplier-contact"
-                    type="text"
-                    placeholder="e.g. Juan Dela Cruz"
-                    value={formData.contact_person}
-                    onChange={(e) => setFormData({ ...formData, contact_person: e.target.value })}
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      padding: "0.5rem 0.75rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "6px",
-                      fontSize: "0.875rem",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                    Phone Number
-                  </label>
-                  <input
-                    id="modal-supplier-phone"
-                    type="text"
-                    placeholder="e.g. +63 2 8632 3000"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    style={{
-                      width: "100%",
-                      boxSizing: "border-box",
-                      padding: "0.5rem 0.75rem",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "6px",
-                      fontSize: "0.875rem",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ marginBottom: "1rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                  Email Address
-                </label>
-                <input
-                  id="modal-supplier-email"
-                  type="email"
-                  placeholder="e.g. orders@supplier.com"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "0.5rem 0.75rem",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div style={{ marginBottom: "1.25rem" }}>
-                <label style={{ display: "block", fontSize: "0.875rem", fontWeight: "600", color: "#334155", marginBottom: "0.25rem" }}>
-                  Physical / Billing Address
-                </label>
-                <textarea
-                  id="modal-supplier-address"
-                  rows={2}
-                  placeholder="Street, City, Province / Postal..."
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "0.5rem 0.75rem",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    outline: "none",
-                    fontFamily: "inherit",
-                  }}
-                />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.75rem" }}>
-                <button
-                  type="button"
-                  onClick={handleCloseModal}
-                  style={{
-                    padding: "0.5rem 1rem",
-                    backgroundColor: "#f1f5f9",
-                    border: "1px solid #cbd5e1",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    fontWeight: "600",
-                    color: "#475569",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  id="btn-modal-supplier-submit"
-                  disabled={submitting}
-                  style={{
-                    padding: "0.5rem 1.25rem",
-                    backgroundColor: "#2563eb",
-                    border: "none",
-                    borderRadius: "6px",
-                    fontSize: "0.875rem",
-                    fontWeight: "600",
-                    color: "#ffffff",
-                    cursor: submitting ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {submitting ? "Saving..." : modalMode === "create" ? "Create Supplier" : "Save Changes"}
-                </button>
-              </div>
-            </form>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+            <Button
+              id="btn-supplier-cancel"
+              variant="secondary"
+              size="md"
+              onClick={handleCloseModal}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              id="btn-supplier-save"
+              type="submit"
+              variant="primary"
+              size="md"
+              loading={submitting}
+            >
+              {submitting ? "Saving..." : modalMode === "create" ? "Create Supplier" : "Save Changes"}
+            </Button>
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
+
+      {/* Confirm Deactivate / Activate Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.supplier?.is_active ? "Deactivate Supplier" : "Activate Supplier"}
+        message={`Are you sure you want to ${
+          confirmDialog.supplier?.is_active ? "deactivate" : "activate"
+        } "${confirmDialog.supplier?.name}"?`}
+        confirmLabel={confirmDialog.supplier?.is_active ? "Deactivate" : "Activate"}
+        variant={confirmDialog.supplier?.is_active ? "danger" : "primary"}
+        loading={confirmDialog.loading}
+        onConfirm={handleConfirmToggleStatus}
+        onCancel={() => setConfirmDialog({ isOpen: false, supplier: null, loading: false })}
+      />
     </div>
   );
 };

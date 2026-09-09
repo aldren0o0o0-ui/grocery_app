@@ -1,8 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, Outlet, Link } from "react-router-dom";
 import { AuthProvider } from "./modules/auth/AuthContext";
 import useAuth from "./modules/auth/useAuth";
 import ProtectedRoute from "./modules/auth/ProtectedRoute";
 import RoleRoute from "./modules/auth/RoleRoute";
+import AppShell from "./components/shell/AppShell";
 
 import LoginPage from "./pages/LoginPage";
 import UnauthorizedPage from "./pages/UnauthorizedPage";
@@ -217,139 +218,94 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-          {/* Standard Authenticated Routes */}
+          {/* Standard Authenticated Routes wrapped in AppShell */}
           <Route
-            path="/"
             element={
               <ProtectedRoute>
-                <DashboardPage />
+                <AppShell>
+                  <Outlet />
+                </AppShell>
               </ProtectedRoute>
             }
-          />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/products"
-            element={
-              <ProtectedRoute>
-                <ProductsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/inventory"
-            element={
-              <ProtectedRoute>
-                <InventoryPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/categories"
-            element={
-              <ProtectedRoute>
-                <CategoriesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/suppliers"
-            element={
-              <ProtectedRoute>
+          >
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/products" element={<ProductsPage />} />
+            <Route path="/inventory" element={<InventoryPage />} />
+            <Route path="/categories" element={<CategoriesPage />} />
+            <Route
+              path="/suppliers"
+              element={
                 <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
                   <SuppliersPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/purchases"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/purchases"
+              element={
                 <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
                   <PurchasesPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/purchases/:id"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/purchases/:id"
+              element={
                 <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
                   <PurchaseDetailPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/pos"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/pos"
+              element={
                 <RoleRoute allowedRoles={["OWNER", "CASHIER"]}>
                   <POSPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/sales"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sales"
+              element={
                 <RoleRoute allowedRoles={["OWNER", "CASHIER"]}>
                   <SalesHistoryPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/returns"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/returns"
+              element={
                 <RoleRoute allowedRoles={["OWNER", "CASHIER"]}>
                   <ReturnsPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/expenses"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/expenses"
+              element={
                 <RoleRoute allowedRoles={["OWNER", "STAFF"]}>
                   <ExpensesPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/users"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/users"
+              element={
                 <RoleRoute allowedRoles={["OWNER"]}>
                   <UsersPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
-
-          {/* Role-Protected Route Example */}
-          <Route
-            path="/admin-preview"
-            element={
-              <ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin-preview"
+              element={
                 <RoleRoute allowedRoles={["OWNER"]}>
                   <AdminPreviewPage />
                 </RoleRoute>
-              </ProtectedRoute>
-            }
-          />
+              }
+            />
+          </Route>
 
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />

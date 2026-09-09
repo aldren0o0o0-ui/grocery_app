@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import Navbar from "../components/Navbar";
 import useAuth from "../modules/auth/useAuth";
 import { getPosProductsApi, checkoutSaleApi } from "../modules/sales/api";
+import {
+  Button,
+  StatusBadge,
+  Modal,
+  Toast,
+  Input,
+} from "../components/common";
 
 export const POSPage = () => {
   const { user } = useAuth();
@@ -25,6 +31,7 @@ export const POSPage = () => {
 
   // Receipt Modal state (completed sale response from server)
   const [completedSale, setCompletedSale] = useState(null);
+  const [toastMessage, setToastMessage] = useState(null);
 
   const searchInputRef = useRef(null);
 
@@ -68,7 +75,7 @@ export const POSPage = () => {
     return tot > 0 ? Math.round(tot * 100) / 100 : 0;
   }, [cartSubtotal, parsedDiscount]);
 
-  // Add Product to Cart (or increment quantity if already in cart)
+  // Add Product to Cart
   const handleAddToCart = (product, quantityToAdd = 1) => {
     setCart((prevCart) => {
       const existingIndex = prevCart.findIndex((item) => item.product.id === product.id);
@@ -91,7 +98,6 @@ export const POSPage = () => {
   const handleSearchKeyDown = (e) => {
     if (e.key === "Enter" && search.trim()) {
       const trimmed = search.trim().toLowerCase();
-      // Match exact barcode or SKU first
       const exactMatch = products.find(
         (p) =>
           (p.barcode && p.barcode.toLowerCase() === trimmed) ||
@@ -107,7 +113,6 @@ export const POSPage = () => {
     }
   };
 
-  // Cart quantity adjustment
   const handleUpdateQuantity = (productId, newQtyStr) => {
     const q = parseFloat(newQtyStr);
     if (isNaN(q) || q <= 0) {
@@ -154,13 +159,10 @@ export const POSPage = () => {
 
   const handleClearCart = () => {
     if (cart.length === 0) return;
-    if (window.confirm("Are you sure you want to clear the cart?")) {
-      setCart([]);
-      setDiscount("0.00");
-    }
+    setCart([]);
+    setDiscount("0.00");
   };
 
-  // Checkout modal controls
   const handleOpenCheckout = () => {
     if (cart.length === 0) return;
     setPaymentMethod("CASH");
@@ -171,7 +173,7 @@ export const POSPage = () => {
 
   const handlePaymentMethodChange = (method) => {
     setPaymentMethod(method);
-    if (method === "GCASH" || method === "CARD") {
+    if (method !== "CASH") {
       setAmountPaid(cartTotal.toFixed(2));
     }
   };
@@ -180,833 +182,694 @@ export const POSPage = () => {
     setAmountPaid(amount.toFixed(2));
   };
 
-  // Submit checkout
-  const handleExecuteCheckout = async () => {
-    try {
-      setCheckoutSubmitting(true);
-      setCheckoutError("");
+  const cashChange = useMemo(() => {
+    if (paymentMethod !== "CASH") return 0;
+    const paid = parseFloat(amountPaid) || 0;
+    return Math.max(0, Math.round((paid - cartTotal) * 100) / 100);
+  }, [paymentMethod, amountPaid, cartTotal]);
 
+  const isCashInsufficient = useMemo(() => {
+    if (paymentMethod !== "CASH") return false;
+    const paid = parseFloat(amountPaid) || 0;
+    return paid < cartTotal;
+  }, [paymentMethod, amountPaid, cartTotal]);
+
+  const handleCompleteCheckout = async () => {
+    setCheckoutError("");
+    if (isCashInsufficient) {
+      setCheckoutError(`Insufficient cash. Amount paid must be at least ₱${cartTotal.toFixed(2)}.`);
+      return;
+    }
+
+    setCheckoutSubmitting(true);
+    try {
       const payload = {
+        payment_method: paymentMethod,
+        discount: parsedDiscount.toFixed(2),
+        amount_paid: paymentMethod === "CASH" ? parseFloat(amountPaid || 0).toFixed(2) : cartTotal.toFixed(2),
         items: cart.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
+          unit_price: item.product.selling_price,
         })),
-        discount: parsedDiscount.toFixed(2),
-        payment: {
-          method: paymentMethod,
-          amount_paid: parseFloat(amountPaid || "0").toFixed(2),
-        },
       };
 
       const res = await checkoutSaleApi(payload);
-
-      // Successfully processed: reset cart, close checkout, open receipt
-      setCart([]);
-      setDiscount("0.00");
-      setIsCheckoutModalOpen(false);
-      setCompletedSale(res.sale);
-      fetchProducts(search); // Refresh catalog stock display
+      if (res.status === "success") {
+        setCompletedSale(res.data);
+        setIsCheckoutModalOpen(false);
+        setCart([]);
+        setDiscount("0.00");
+        fetchProducts(search);
+      } else {
+        setCheckoutError(res.message || "Checkout failed.");
+      }
     } catch (err) {
-      setCheckoutError(err.response?.data?.message || "Checkout failed. Please check stock or inputs.");
+      setCheckoutError(err.response?.data?.error?.message || err.message || "Failed to process sale.");
     } finally {
       setCheckoutSubmitting(false);
     }
   };
 
-  const handleNewSale = () => {
-    setCompletedSale(null);
-    if (searchInputRef.current) {
-      searchInputRef.current.focus();
-    }
-  };
-
-  // Change amount calculation for preview
-  const cashAmountNum = parseFloat(amountPaid) || 0;
-  const changePreview = cashAmountNum >= cartTotal ? (cashAmountNum - cartTotal).toFixed(2) : "0.00";
-  const isCashInsufficient = paymentMethod === "CASH" && cashAmountNum < cartTotal;
-
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: "#f3f4f6", display: "flex", flexDirection: "column" }}>
-      <Navbar />
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      {/* Toast */}
+      {toastMessage && (
+        <Toast
+          type={toastMessage.type}
+          message={toastMessage.text}
+          onClose={() => setToastMessage(null)}
+        />
+      )}
 
-      <main style={{ flex: 1, padding: "1rem 1.5rem", maxWidth: "1600px", width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
-        {/* Top bar */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "1rem",
-            backgroundColor: "#ffffff",
-            padding: "0.75rem 1.25rem",
-            borderRadius: "8px",
-            boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-          }}
-        >
-          <div>
-            <h1 style={{ margin: 0, fontSize: "1.25rem", color: "#111827", fontWeight: "700" }}>Point of Sale (POS)</h1>
-            <p style={{ margin: "0.2rem 0 0", fontSize: "0.8rem", color: "#6b7280" }}>
-              Fast grocery checkout &bull; Cashier: <strong>{user?.first_name} {user?.last_name}</strong>
-            </p>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-            <span
+      {/* POS Top Bar */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: "12px",
+          backgroundColor: "var(--color-surface)",
+          padding: "12px 20px",
+          borderRadius: "var(--radius-lg)",
+          border: "1px solid var(--color-border)",
+        }}
+      >
+        <div>
+          <h1 style={{ fontSize: "18px", fontWeight: 800, color: "var(--color-text)", margin: 0 }}>
+            🛒 Retail Checkout Terminal
+          </h1>
+          <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+            Cashier: <strong>{user?.first_name} {user?.last_name}</strong> • Timezone: Asia/Manila (PHT)
+          </span>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span
+            style={{
+              fontSize: "12px",
+              padding: "4px 10px",
+              backgroundColor: "var(--color-primary-soft)",
+              color: "var(--color-primary)",
+              borderRadius: "var(--radius-full)",
+              fontWeight: 700,
+            }}
+          >
+            ACTIVE SESSION
+          </span>
+        </div>
+      </div>
+
+      {/* Main POS Grid: 65% Catalog, 35% Cart */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 380px",
+          gap: "20px",
+          alignItems: "start",
+        }}
+      >
+        {/* Left Panel: Search & Products Grid */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          {/* Search Bar */}
+          <div
+            style={{
+              backgroundColor: "var(--color-surface)",
+              padding: "14px 16px",
+              borderRadius: "var(--radius-lg)",
+              border: "1px solid var(--color-border)",
+              boxShadow: "var(--shadow-sm)",
+            }}
+          >
+            <input
+              ref={searchInputRef}
+              type="text"
+              placeholder="Scan barcode or type product name / SKU (Press Enter to quick-add)..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              autoFocus
               style={{
-                backgroundColor: "#ecfdf5",
-                color: "#065f46",
-                fontSize: "0.75rem",
-                fontWeight: "600",
-                padding: "0.25rem 0.6rem",
-                borderRadius: "9999px",
-                border: "1px solid #a7f3d0",
+                width: "100%",
+                height: "44px",
+                padding: "0 14px",
+                fontSize: "14px",
+                fontFamily: "var(--font-sans)",
+                border: "2px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                outline: "none",
+                transition: "border-color 0.15s ease",
+              }}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "var(--color-primary)")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "var(--color-border)")}
+            />
+          </div>
+
+          {catalogError && (
+            <div
+              role="alert"
+              style={{
+                padding: "10px 14px",
+                backgroundColor: "var(--color-danger-soft)",
+                border: "1px solid var(--color-danger)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-danger)",
+                fontSize: "13px",
               }}
             >
-              System Online
-            </span>
+              ⚠️ {catalogError}
+            </div>
+          )}
+
+          {/* Product Grid */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
+              gap: "14px",
+              maxHeight: "calc(100vh - 240px)",
+              overflowY: "auto",
+              paddingRight: "4px",
+            }}
+          >
+            {catalogLoading && products.length === 0 ? (
+              <div style={{ gridColumn: "1 / -1", padding: "48px 0", textAlign: "center", color: "var(--color-text-secondary)" }}>
+                Loading catalog products...
+              </div>
+            ) : products.length === 0 ? (
+              <div style={{ gridColumn: "1 / -1", padding: "48px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "14px" }}>
+                No products found matching &quot;{search}&quot;.
+              </div>
+            ) : (
+              products.map((p) => {
+                const stock = parseFloat(p.stock_quantity) || 0;
+                const isOutOfStock = stock <= 0;
+
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    disabled={isOutOfStock}
+                    onClick={() => handleAddToCart(p, 1)}
+                    style={{
+                      backgroundColor: isOutOfStock ? "var(--color-bg)" : "var(--color-surface)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: "var(--radius-lg)",
+                      padding: "14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      textAlign: "left",
+                      cursor: isOutOfStock ? "not-allowed" : "pointer",
+                      transition: "all 0.15s ease",
+                      boxShadow: "var(--shadow-sm)",
+                      opacity: isOutOfStock ? 0.6 : 1,
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isOutOfStock) {
+                        e.currentTarget.style.borderColor = "var(--color-primary)";
+                        e.currentTarget.style.boxShadow = "var(--shadow-md)";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isOutOfStock) {
+                        e.currentTarget.style.borderColor = "var(--color-border)";
+                        e.currentTarget.style.boxShadow = "var(--shadow-sm)";
+                      }
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "11px", color: "var(--color-text-muted)", fontFamily: "var(--font-mono)", marginBottom: "4px" }}>
+                        {p.sku}
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--color-text)", lineHeight: 1.3, marginBottom: "8px" }}>
+                        {p.name}
+                      </div>
+                    </div>
+
+                    <div style={{ marginTop: "8px" }}>
+                      <div style={{ fontSize: "16px", fontWeight: 800, color: "var(--color-primary)", marginBottom: "6px" }}>
+                        ₱{parseFloat(p.selling_price).toFixed(2)}
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                          {stock.toFixed(0)} {p.unit}
+                        </span>
+                        <StatusBadge
+                          status={isOutOfStock ? "OUT" : "IN"}
+                          variant={isOutOfStock ? "danger" : "success"}
+                        />
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
-        {/* 2-Column POS Layout */}
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: "1.25rem", alignItems: "start" }}>
-          {/* Left Column: Product Search & Grid */}
+        {/* Right Panel: Cart & Checkout */}
+        <div
+          style={{
+            backgroundColor: "var(--color-surface)",
+            borderRadius: "var(--radius-lg)",
+            border: "1px solid var(--color-border)",
+            boxShadow: "var(--shadow-sm)",
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "calc(100vh - 170px)",
+          }}
+        >
+          {/* Cart Header */}
           <div
             style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "1rem",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              minHeight: "650px",
+              padding: "16px 20px",
+              borderBottom: "1px solid var(--color-border)",
               display: "flex",
-              flexDirection: "column",
+              justifyContent: "space-between",
+              alignItems: "center",
             }}
           >
-            {/* Search Input Bar */}
-            <div style={{ marginBottom: "1rem" }}>
-              <div style={{ position: "relative" }}>
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Scan barcode or search product by name/SKU (Press Enter to add)..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  onKeyDown={handleSearchKeyDown}
-                  autoFocus
-                  style={{
-                    width: "100%",
-                    padding: "0.75rem 1rem",
-                    fontSize: "0.95rem",
-                    border: "2px solid #2563eb",
-                    borderRadius: "6px",
-                    outline: "none",
-                    boxSizing: "border-box",
-                  }}
-                />
-                {search && (
-                  <button
-                    onClick={() => setSearch("")}
-                    style={{
-                      position: "absolute",
-                      right: "0.75rem",
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      background: "none",
-                      border: "none",
-                      color: "#9ca3af",
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    ✕
-                  </button>
-                )}
-              </div>
+            <div>
+              <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+                Current Order
+              </h2>
+              <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                {cart.length} unique items
+              </span>
             </div>
-
-            {/* Error or Loading */}
-            {catalogError && (
-              <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem", fontSize: "0.85rem" }}>
-                {catalogError}
-              </div>
+            {cart.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={handleClearCart}>
+                Clear
+              </Button>
             )}
-
-            {/* Product Cards Grid */}
-            <div style={{ flex: 1, overflowY: "auto", maxHeight: "550px", paddingRight: "0.25rem" }}>
-              {catalogLoading ? (
-                <div style={{ padding: "3rem", textAlign: "center", color: "#6b7280" }}>Loading products...</div>
-              ) : products.length === 0 ? (
-                <div style={{ padding: "3rem", textAlign: "center", color: "#9ca3af" }}>
-                  No active products match your search.
-                </div>
-              ) : (
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-                    gap: "0.75rem",
-                  }}
-                >
-                  {products.map((p) => {
-                    const stockNum = parseFloat(p.stock_quantity) || 0;
-                    const isOutOfStock = stockNum <= 0;
-
-                    return (
-                      <div
-                        key={p.id}
-                        onClick={() => !isOutOfStock && handleAddToCart(p, 1)}
-                        style={{
-                          border: "1px solid #e5e7eb",
-                          borderRadius: "6px",
-                          padding: "0.75rem",
-                          backgroundColor: isOutOfStock ? "#f9fafb" : "#ffffff",
-                          cursor: isOutOfStock ? "not-allowed" : "pointer",
-                          transition: "border-color 0.15s, box-shadow 0.15s",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "space-between",
-                          opacity: isOutOfStock ? 0.6 : 1,
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: "0.75rem", color: "#6b7280", marginBottom: "0.2rem" }}>
-                            {p.sku} {p.barcode && `| ${p.barcode}`}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "0.9rem",
-                              fontWeight: "600",
-                              color: "#111827",
-                              marginBottom: "0.4rem",
-                              lineHeight: "1.2",
-                              minHeight: "2.2rem",
-                            }}
-                          >
-                            {p.name}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: "0.5rem" }}>
-                            <span style={{ fontSize: "1.05rem", fontWeight: "700", color: "#2563eb" }}>
-                              ₱{parseFloat(p.selling_price).toFixed(2)}
-                            </span>
-                            <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>/{p.unit}</span>
-                          </div>
-
-                          <div style={{ marginTop: "0.4rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span
-                              style={{
-                                fontSize: "0.7rem",
-                                fontWeight: "600",
-                                color: isOutOfStock ? "#dc2626" : stockNum <= 5 ? "#d97706" : "#059669",
-                              }}
-                            >
-                              {isOutOfStock ? "Out of Stock" : `Stock: ${stockNum} ${p.unit}`}
-                            </span>
-                            <button
-                              disabled={isOutOfStock}
-                              style={{
-                                padding: "0.2rem 0.5rem",
-                                backgroundColor: isOutOfStock ? "#e5e7eb" : "#2563eb",
-                                color: isOutOfStock ? "#9ca3af" : "#ffffff",
-                                border: "none",
-                                borderRadius: "4px",
-                                fontSize: "0.75rem",
-                                fontWeight: "600",
-                                cursor: isOutOfStock ? "not-allowed" : "pointer",
-                              }}
-                            >
-                              + Add
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
           </div>
 
-          {/* Right Column: Cart & Summary */}
+          {/* Cart Items List */}
           <div
             style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "1rem",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-              minHeight: "650px",
+              flex: 1,
+              overflowY: "auto",
+              padding: "12px 16px",
               display: "flex",
               flexDirection: "column",
+              gap: "8px",
             }}
           >
-            {/* Cart Header */}
+            {cart.length === 0 ? (
+              <div style={{ padding: "48px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
+                Cart is empty. Click a product or scan a barcode to begin checkout.
+              </div>
+            ) : (
+              cart.map((item) => {
+                const itemSubtotal =
+                  (parseFloat(item.quantity) || 0) * (parseFloat(item.product.selling_price) || 0);
+
+                return (
+                  <div
+                    key={item.product.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "10px 12px",
+                      backgroundColor: "var(--color-bg)",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid var(--color-border-subtle)",
+                      gap: "10px",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: "13px", color: "var(--color-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {item.product.name}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                        ₱{parseFloat(item.product.selling_price).toFixed(2)} / {item.product.unit}
+                      </div>
+                    </div>
+
+                    {/* Quantity Controls */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleDecrement(item.product.id)}
+                        style={{
+                          width: "26px",
+                          height: "26px",
+                          borderRadius: "var(--radius-sm)",
+                          border: "1px solid var(--color-border)",
+                          backgroundColor: "var(--color-surface)",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        -
+                      </button>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0.001"
+                        value={item.quantity}
+                        onChange={(e) => handleUpdateQuantity(item.product.id, e.target.value)}
+                        style={{
+                          width: "44px",
+                          height: "26px",
+                          textAlign: "center",
+                          fontSize: "12px",
+                          fontFamily: "var(--font-mono)",
+                          fontWeight: 600,
+                          border: "1px solid var(--color-border)",
+                          borderRadius: "var(--radius-sm)",
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleIncrement(item.product.id)}
+                        style={{
+                          width: "26px",
+                          height: "26px",
+                          borderRadius: "var(--radius-sm)",
+                          border: "1px solid var(--color-border)",
+                          backgroundColor: "var(--color-surface)",
+                          cursor: "pointer",
+                          fontWeight: 700,
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    <div style={{ textAlign: "right", minWidth: "60px" }}>
+                      <strong style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--color-text)" }}>
+                        ₱{itemSubtotal.toFixed(2)}
+                      </strong>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveItem(item.product.id)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--color-danger)",
+                        cursor: "pointer",
+                        padding: "2px 4px",
+                        fontSize: "14px",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Cart Footer & Checkout */}
+          <div
+            style={{
+              padding: "16px 20px",
+              borderTop: "1px solid var(--color-border)",
+              backgroundColor: "var(--color-surface)",
+              borderRadius: "0 0 var(--radius-lg) var(--radius-lg)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+              <span>Subtotal:</span>
+              <span style={{ fontFamily: "var(--font-mono)" }}>₱{cartSubtotal.toFixed(2)}</span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", fontSize: "13px", color: "var(--color-text-secondary)" }}>
+              <span>Discount (₱):</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={discount}
+                onChange={(e) => setDiscount(e.target.value)}
+                placeholder="0.00"
+                style={{
+                  width: "90px",
+                  height: "30px",
+                  textAlign: "right",
+                  padding: "0 8px",
+                  border: "1px solid var(--color-border)",
+                  borderRadius: "var(--radius-sm)",
+                  fontSize: "12px",
+                  fontFamily: "var(--font-mono)",
+                }}
+              />
+            </div>
+
             <div
               style={{
                 display: "flex",
                 justifyContent: "space-between",
-                alignItems: "center",
-                borderBottom: "1px solid #e5e7eb",
-                paddingBottom: "0.75rem",
-                marginBottom: "0.75rem",
+                alignItems: "baseline",
+                padding: "12px 0",
+                borderTop: "1px solid var(--color-border-subtle)",
+                marginBottom: "12px",
               }}
             >
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-                <h2 style={{ margin: 0, fontSize: "1.1rem", color: "#111827", fontWeight: "700" }}>Current Sale</h2>
-                <span
-                  style={{
-                    backgroundColor: "#e0e7ff",
-                    color: "#3730a3",
-                    borderRadius: "9999px",
-                    padding: "0.15rem 0.5rem",
-                    fontSize: "0.75rem",
-                    fontWeight: "600",
-                  }}
-                >
-                  {cart.length} {cart.length === 1 ? "item" : "items"}
-                </span>
-              </div>
-              <button
-                onClick={handleClearCart}
-                disabled={cart.length === 0}
-                style={{
-                  padding: "0.3rem 0.6rem",
-                  backgroundColor: "#fee2e2",
-                  color: "#dc2626",
-                  border: "none",
-                  borderRadius: "4px",
-                  fontSize: "0.75rem",
-                  fontWeight: "600",
-                  cursor: cart.length === 0 ? "not-allowed" : "pointer",
-                  opacity: cart.length === 0 ? 0.5 : 1,
-                }}
-              >
-                Clear Cart
-              </button>
+              <span style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)" }}>Total Due:</span>
+              <span style={{ fontSize: "24px", fontWeight: 800, color: "var(--color-primary)", fontFamily: "var(--font-mono)" }}>
+                ₱{cartTotal.toFixed(2)}
+              </span>
             </div>
 
-            {/* Cart Items List */}
-            <div style={{ flex: 1, overflowY: "auto", maxHeight: "360px", marginBottom: "1rem" }}>
-              {cart.length === 0 ? (
-                <div style={{ padding: "3rem 1rem", textAlign: "center", color: "#9ca3af" }}>
-                  <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>🛒</div>
-                  <div>Cart is empty.</div>
-                  <div style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: "0.25rem" }}>
-                    Scan a barcode or click products on the left to add items.
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                  {cart.map((item) => {
-                    const price = parseFloat(item.product.selling_price) || 0;
-                    const qty = parseFloat(item.quantity) || 0;
-                    const lineSubtotal = (price * qty).toFixed(2);
-
-                    return (
-                      <div
-                        key={item.product.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "0.6rem",
-                          border: "1px solid #f3f4f6",
-                          borderRadius: "6px",
-                          backgroundColor: "#fafafa",
-                        }}
-                      >
-                        <div style={{ flex: 1, marginRight: "0.5rem" }}>
-                          <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "#111827" }}>
-                            {item.product.name}
-                          </div>
-                          <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                            ₱{price.toFixed(2)} / {item.product.unit}
-                          </div>
-                        </div>
-
-                        {/* Quantity Controls */}
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.3rem", marginRight: "0.75rem" }}>
-                          <button
-                            onClick={() => handleDecrement(item.product.id)}
-                            style={{
-                              width: "24px",
-                              height: "24px",
-                              borderRadius: "4px",
-                              border: "1px solid #d1d5db",
-                              backgroundColor: "#ffffff",
-                              cursor: "pointer",
-                              fontWeight: "bold",
-                            }}
-                          >
-                            -
-                          </button>
-                          <input
-                            type="text"
-                            value={item.quantity}
-                            onChange={(e) => handleUpdateQuantity(item.product.id, e.target.value)}
-                            style={{
-                              width: "48px",
-                              textAlign: "center",
-                              padding: "0.2rem",
-                              fontSize: "0.85rem",
-                              border: "1px solid #d1d5db",
-                              borderRadius: "4px",
-                            }}
-                          />
-                          <button
-                            onClick={() => handleIncrement(item.product.id)}
-                            style={{
-                              width: "24px",
-                              height: "24px",
-                              borderRadius: "4px",
-                              border: "1px solid #d1d5db",
-                              backgroundColor: "#ffffff",
-                              cursor: "pointer",
-                              fontWeight: "bold",
-                            }}
-                          >
-                            +
-                          </button>
-                        </div>
-
-                        {/* Line Subtotal */}
-                        <div style={{ textAlign: "right", minWidth: "65px" }}>
-                          <div style={{ fontSize: "0.9rem", fontWeight: "700", color: "#111827" }}>
-                            ₱{lineSubtotal}
-                          </div>
-                        </div>
-
-                        {/* Delete Item */}
-                        <button
-                          onClick={() => handleRemoveItem(item.product.id)}
-                          style={{
-                            marginLeft: "0.5rem",
-                            background: "none",
-                            border: "none",
-                            color: "#ef4444",
-                            cursor: "pointer",
-                            fontSize: "1rem",
-                            padding: "0.2rem",
-                          }}
-                          title="Remove item"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Cart Summary & Checkout */}
-            <div style={{ borderTop: "2px solid #e5e7eb", paddingTop: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.4rem", fontSize: "0.9rem", color: "#4b5563" }}>
-                <span>Subtotal:</span>
-                <span>₱{cartSubtotal.toFixed(2)}</span>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem", fontSize: "0.9rem", color: "#4b5563" }}>
-                <span>Discount (₱):</span>
-                <input
-                  type="text"
-                  value={discount}
-                  onChange={(e) => setDiscount(e.target.value)}
-                  placeholder="0.00"
-                  style={{
-                    width: "80px",
-                    textAlign: "right",
-                    padding: "0.2rem 0.4rem",
-                    border: "1px solid #d1d5db",
-                    borderRadius: "4px",
-                    fontSize: "0.85rem",
-                  }}
-                />
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "baseline",
-                  padding: "0.75rem 0",
-                  borderTop: "1px solid #e5e7eb",
-                  marginBottom: "0.75rem",
-                }}
-              >
-                <span style={{ fontSize: "1.1rem", fontWeight: "700", color: "#111827" }}>Total Due:</span>
-                <span style={{ fontSize: "1.6rem", fontWeight: "800", color: "#16a34a" }}>
-                  ₱{cartTotal.toFixed(2)}
-                </span>
-              </div>
-
-              <button
-                onClick={handleOpenCheckout}
-                disabled={cart.length === 0}
-                style={{
-                  width: "100%",
-                  padding: "0.85rem",
-                  backgroundColor: cart.length === 0 ? "#9ca3af" : "#16a34a",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "6px",
-                  fontSize: "1.1rem",
-                  fontWeight: "700",
-                  cursor: cart.length === 0 ? "not-allowed" : "pointer",
-                  transition: "background-color 0.15s",
-                }}
-              >
-                Checkout & Pay (₱{cartTotal.toFixed(2)})
-              </button>
-            </div>
+            <Button
+              variant="primary"
+              size="lg"
+              onClick={handleOpenCheckout}
+              disabled={cart.length === 0}
+              style={{ width: "100%" }}
+            >
+              Checkout & Pay (₱{cartTotal.toFixed(2)})
+            </Button>
           </div>
         </div>
-      </main>
+      </div>
 
       {/* Checkout Payment Modal */}
-      {isCheckoutModalOpen && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1000,
-          }}
-        >
+      <Modal
+        isOpen={isCheckoutModalOpen}
+        onClose={() => setIsCheckoutModalOpen(false)}
+        title="Checkout Payment"
+        maxWidth="480px"
+      >
+        {checkoutError && (
           <div
+            role="alert"
             style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "1.5rem",
-              width: "480px",
-              maxWidth: "90%",
-              boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
+              padding: "10px 14px",
+              backgroundColor: "var(--color-danger-soft)",
+              border: "1px solid var(--color-danger)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-danger)",
+              fontSize: "13px",
+              marginBottom: "16px",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#111827" }}>Checkout Payment</h2>
-              <button
-                onClick={() => setIsCheckoutModalOpen(false)}
-                disabled={checkoutSubmitting}
-                style={{ background: "none", border: "none", fontSize: "1.25rem", cursor: "pointer" }}
+            {checkoutError}
+          </div>
+        )}
+
+        {/* Total Display */}
+        <div
+          style={{
+            backgroundColor: "var(--color-primary-soft)",
+            border: "1px solid var(--color-primary)",
+            borderRadius: "var(--radius-md)",
+            padding: "16px",
+            textAlign: "center",
+            marginBottom: "16px",
+          }}
+        >
+          <div style={{ fontSize: "12px", color: "var(--color-primary-hover)", fontWeight: 700 }}>TOTAL AMOUNT DUE</div>
+          <div style={{ fontSize: "32px", fontWeight: 800, color: "var(--color-primary)", fontFamily: "var(--font-mono)", marginTop: "4px" }}>
+            ₱{cartTotal.toFixed(2)}
+          </div>
+        </div>
+
+        {/* Payment Method Selector */}
+        <div style={{ marginBottom: "16px" }}>
+          <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "var(--color-text)", marginBottom: "6px" }}>
+            Payment Method
+          </label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+            {["CASH", "GCASH", "CARD"].map((method) => (
+              <Button
+                key={method}
+                type="button"
+                variant={paymentMethod === method ? "primary" : "secondary"}
+                size="md"
+                onClick={() => handlePaymentMethodChange(method)}
               >
-                ✕
-              </button>
+                {method}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* Cash Input */}
+        {paymentMethod === "CASH" && (
+          <div style={{ marginBottom: "16px" }}>
+            <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "var(--color-text)", marginBottom: "6px" }}>
+              Cash Received (₱)
+            </label>
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={amountPaid}
+              onChange={(e) => setAmountPaid(e.target.value)}
+              style={{ fontSize: "16px", fontWeight: 700 }}
+              error={isCashInsufficient}
+            />
+
+            {/* Quick Denominations */}
+            <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+              <Button variant="secondary" size="sm" onClick={() => handleQuickCash(cartTotal)}>
+                Exact (₱{cartTotal.toFixed(2)})
+              </Button>
+              {[50, 100, 200, 500, 1000].map((denom) => (
+                <Button key={denom} variant="secondary" size="sm" onClick={() => handleQuickCash(denom)}>
+                  ₱{denom}
+                </Button>
+              ))}
             </div>
 
-            {checkoutError && (
-              <div style={{ padding: "0.75rem", backgroundColor: "#fee2e2", color: "#b91c1c", borderRadius: "6px", marginBottom: "1rem", fontSize: "0.85rem" }}>
-                {checkoutError}
-              </div>
-            )}
-
-            {/* Total Display */}
+            {/* Change Due Preview */}
             <div
               style={{
-                backgroundColor: "#f0fdf4",
-                border: "1px solid #bbf7d0",
-                borderRadius: "6px",
-                padding: "1rem",
-                textAlign: "center",
-                marginBottom: "1.25rem",
+                marginTop: "12px",
+                padding: "10px 14px",
+                backgroundColor: isCashInsufficient ? "var(--color-danger-soft)" : "var(--color-primary-soft)",
+                borderRadius: "var(--radius-md)",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontSize: "13px",
               }}
             >
-              <div style={{ fontSize: "0.85rem", color: "#166534", fontWeight: "600" }}>TOTAL AMOUNT DUE</div>
-              <div style={{ fontSize: "2rem", fontWeight: "800", color: "#15803d" }}>₱{cartTotal.toFixed(2)}</div>
-            </div>
-
-            {/* Payment Method Tabs */}
-            <div style={{ marginBottom: "1.25rem" }}>
-              <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#374151", marginBottom: "0.4rem" }}>
-                Select Payment Method
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.5rem" }}>
-                {["CASH", "GCASH", "CARD"].map((method) => (
-                  <button
-                    key={method}
-                    type="button"
-                    onClick={() => handlePaymentMethodChange(method)}
-                    style={{
-                      padding: "0.6rem",
-                      border: paymentMethod === method ? "2px solid #2563eb" : "1px solid #d1d5db",
-                      borderRadius: "6px",
-                      backgroundColor: paymentMethod === method ? "#eff6ff" : "#ffffff",
-                      color: paymentMethod === method ? "#1e40af" : "#374151",
-                      fontWeight: "600",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {method}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Payment Input based on Method */}
-            {paymentMethod === "CASH" ? (
-              <div style={{ marginBottom: "1.25rem" }}>
-                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "600", color: "#374151", marginBottom: "0.4rem" }}>
-                  Cash Received (₱)
-                </label>
-                <input
-                  type="text"
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "0.6rem 0.8rem",
-                    fontSize: "1.1rem",
-                    fontWeight: "600",
-                    border: isCashInsufficient ? "2px solid #ef4444" : "1px solid #d1d5db",
-                    borderRadius: "6px",
-                    boxSizing: "border-box",
-                  }}
-                />
-
-                {/* Quick denomination helpers */}
-                <div style={{ display: "flex", gap: "0.3rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickCash(cartTotal)}
-                    style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", border: "1px solid #d1d5db", borderRadius: "4px", backgroundColor: "#f9fafb", cursor: "pointer" }}
-                  >
-                    Exact (₱{cartTotal.toFixed(2)})
-                  </button>
-                  {[50, 100, 200, 500, 1000].map((denom) => (
-                    <button
-                      key={denom}
-                      type="button"
-                      onClick={() => handleQuickCash(denom)}
-                      style={{ padding: "0.25rem 0.5rem", fontSize: "0.75rem", border: "1px solid #d1d5db", borderRadius: "4px", backgroundColor: "#f9fafb", cursor: "pointer" }}
-                    >
-                      ₱{denom}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Change preview */}
-                <div
-                  style={{
-                    marginTop: "0.75rem",
-                    padding: "0.6rem",
-                    backgroundColor: isCashInsufficient ? "#fee2e2" : "#f0fdf4",
-                    borderRadius: "4px",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: "0.9rem",
-                    fontWeight: "600",
-                    color: isCashInsufficient ? "#b91c1c" : "#166534",
-                  }}
-                >
-                  <span>{isCashInsufficient ? "Shortage:" : "Change to Return:"}</span>
-                  <span>
-                    ₱{isCashInsufficient ? (cartTotal - cashAmountNum).toFixed(2) : changePreview}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div
-                style={{
-                  padding: "1rem",
-                  backgroundColor: "#eff6ff",
-                  borderRadius: "6px",
-                  color: "#1e40af",
-                  fontSize: "0.85rem",
-                  marginBottom: "1.25rem",
-                  lineHeight: "1.5",
-                }}
-              >
-                <div>Electronic Payment: <strong>{paymentMethod}</strong></div>
-                <div>Amount to charge: <strong>₱{cartTotal.toFixed(2)}</strong></div>
-                <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: "0.25rem" }}>
-                  Payment will be recorded directly against this transaction.
-                </div>
-              </div>
-            )}
-
-            {/* Modal Actions */}
-            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={() => setIsCheckoutModalOpen(false)}
-                disabled={checkoutSubmitting}
-                style={{
-                  padding: "0.6rem 1.25rem",
-                  backgroundColor: "#f3f4f6",
-                  color: "#374151",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteCheckout}
-                disabled={checkoutSubmitting || isCashInsufficient}
-                style={{
-                  padding: "0.6rem 1.5rem",
-                  backgroundColor: checkoutSubmitting || isCashInsufficient ? "#9ca3af" : "#16a34a",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "6px",
-                  fontWeight: "700",
-                  cursor: checkoutSubmitting || isCashInsufficient ? "not-allowed" : "pointer",
-                }}
-              >
-                {checkoutSubmitting ? "Processing..." : "Confirm & Complete Sale"}
-              </button>
+              <span style={{ fontWeight: 600, color: isCashInsufficient ? "var(--color-danger)" : "var(--color-primary-hover)" }}>
+                {isCashInsufficient ? "Shortage:" : "Change Due:"}
+              </span>
+              <strong style={{ fontSize: "18px", fontFamily: "var(--font-mono)", color: isCashInsufficient ? "var(--color-danger)" : "var(--color-primary)" }}>
+                ₱{isCashInsufficient ? (cartTotal - (parseFloat(amountPaid) || 0)).toFixed(2) : cashChange.toFixed(2)}
+              </strong>
             </div>
           </div>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "24px" }}>
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={() => setIsCheckoutModalOpen(false)}
+            disabled={checkoutSubmitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            onClick={handleCompleteCheckout}
+            loading={checkoutSubmitting}
+            disabled={checkoutSubmitting || isCashInsufficient}
+          >
+            Complete Sale
+          </Button>
         </div>
-      )}
+      </Modal>
 
       {/* Printable Receipt Modal */}
-      {completedSale && (
-        <div
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: "rgba(0,0,0,0.6)",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            zIndex: 1100,
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#ffffff",
-              borderRadius: "8px",
-              padding: "2rem",
-              width: "400px",
-              maxWidth: "95%",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
-              fontFamily: "monospace",
-              maxHeight: "90vh",
-              overflowY: "auto",
-            }}
-          >
-            {/* Printable Receipt Container */}
-            <div id="receipt-print-area">
-              <div style={{ textAlign: "center", marginBottom: "1rem" }}>
-                <h2 style={{ margin: 0, fontSize: "1.2rem", fontWeight: "bold" }}>GROCERY SME SYSTEM</h2>
-                <div style={{ fontSize: "0.8rem", color: "#6b7280" }}>Official Sales Receipt</div>
-                <div style={{ fontSize: "0.85rem", fontWeight: "bold", marginTop: "0.5rem" }}>
-                  Invoice #{completedSale.invoice_number}
-                </div>
-                <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                  {new Date(completedSale.created_at).toLocaleString()}
-                </div>
-                <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>
-                  Cashier: {completedSale.cashier?.name}
-                </div>
+      <Modal
+        isOpen={Boolean(completedSale)}
+        onClose={() => setCompletedSale(null)}
+        title="Sale Completed Successfully!"
+        maxWidth="460px"
+      >
+        {completedSale && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+            <div
+              style={{
+                border: "1px dashed var(--color-border)",
+                padding: "20px",
+                borderRadius: "var(--radius-md)",
+                backgroundColor: "var(--color-bg)",
+                fontFamily: "var(--font-mono)",
+                fontSize: "12px",
+              }}
+            >
+              <div style={{ textAlign: "center", marginBottom: "12px" }}>
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>GROCERY SME SYSTEM</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>Official Sales Receipt</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>Invoice: {completedSale.invoice_number}</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>Date: {new Date(completedSale.created_at).toLocaleString()}</div>
               </div>
 
-              <div style={{ borderBottom: "1px dashed #000000", marginBottom: "0.75rem" }} />
+              <div style={{ borderBottom: "1px solid var(--color-border)", margin: "8px 0" }} />
 
-              {/* Items */}
-              <div style={{ marginBottom: "0.75rem" }}>
-                {completedSale.items.map((it) => (
-                  <div key={it.id} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem", marginBottom: "0.3rem" }}>
-                    <div style={{ flex: 1 }}>
-                      <div>{it.product_name}</div>
-                      <div style={{ fontSize: "0.7rem", color: "#6b7280" }}>
-                        {parseFloat(it.quantity)} {it.product_unit} x ₱{parseFloat(it.unit_price).toFixed(2)}
-                      </div>
-                    </div>
-                    <div style={{ fontWeight: "bold" }}>₱{parseFloat(it.subtotal).toFixed(2)}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {(completedSale.items || []).map((it) => (
+                  <div key={it.id} style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span>{it.quantity}x {it.product_name}</span>
+                    <span>₱{parseFloat(it.line_total).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
-              <div style={{ borderBottom: "1px dashed #000000", marginBottom: "0.75rem" }} />
+              <div style={{ borderBottom: "1px solid var(--color-border)", margin: "8px 0" }} />
 
-              {/* Totals */}
-              <div style={{ fontSize: "0.85rem", display: "flex", flexDirection: "column", gap: "0.2rem", marginBottom: "0.75rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span>Subtotal:</span>
-                  <span>₱{parseFloat(completedSale.subtotal).toFixed(2)}</span>
-                </div>
-                {parseFloat(completedSale.discount) > 0 && (
-                  <div style={{ display: "flex", justifyContent: "space-between", color: "#15803d" }}>
-                    <span>Discount:</span>
-                    <span>-₱{parseFloat(completedSale.discount).toFixed(2)}</span>
-                  </div>
-                )}
-                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "1rem", marginTop: "0.25rem" }}>
-                  <span>TOTAL:</span>
-                  <span>₱{parseFloat(completedSale.total).toFixed(2)}</span>
-                </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>Subtotal:</span>
+                <span>₱{parseFloat(completedSale.subtotal || completedSale.total).toFixed(2)}</span>
               </div>
-
-              <div style={{ borderBottom: "1px dashed #000000", marginBottom: "0.75rem" }} />
-
-              {/* Payment info */}
-              {completedSale.payments && completedSale.payments.length > 0 && (
-                <div style={{ fontSize: "0.8rem", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>Payment ({completedSale.payments[0].payment_method}):</span>
-                    <span>₱{parseFloat(completedSale.payments[0].amount_paid).toFixed(2)}</span>
-                  </div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>Change:</span>
-                    <span>₱{parseFloat(completedSale.payments[0].change_amount).toFixed(2)}</span>
-                  </div>
+              {parseFloat(completedSale.discount || 0) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-danger)" }}>
+                  <span>Discount:</span>
+                  <span>-₱{parseFloat(completedSale.discount).toFixed(2)}</span>
                 </div>
               )}
-
-              <div style={{ textAlign: "center", marginTop: "1.5rem", fontSize: "0.75rem", color: "#6b7280" }}>
-                <div>Thank you for your purchase!</div>
-                <div>Please keep this receipt.</div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", fontWeight: 800, marginTop: "4px" }}>
+                <span>TOTAL PAID:</span>
+                <span>₱{parseFloat(completedSale.total).toFixed(2)}</span>
               </div>
+              <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-text-secondary)", marginTop: "4px" }}>
+                <span>Method:</span>
+                <span>{completedSale.payment_method}</span>
+              </div>
+              {completedSale.change !== undefined && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "var(--color-text-secondary)" }}>
+                  <span>Change:</span>
+                  <span>₱{parseFloat(completedSale.change || 0).toFixed(2)}</span>
+                </div>
+              )}
             </div>
 
-            {/* Receipt Actions */}
-            <div style={{ marginTop: "1.5rem", display: "flex", gap: "0.75rem", justifyContent: "center" }}>
-              <button
+            <div style={{ display: "flex", gap: "10px", marginTop: "10px" }}>
+              <Button
+                variant="secondary"
+                size="md"
                 onClick={() => window.print()}
-                style={{
-                  padding: "0.5rem 1rem",
-                  backgroundColor: "#f3f4f6",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "4px",
-                  fontWeight: "600",
-                  cursor: "pointer",
-                  fontSize: "0.85rem",
-                }}
+                style={{ flex: 1 }}
               >
-                🖨 Print
-              </button>
-              <button
-                onClick={handleNewSale}
-                style={{
-                  padding: "0.5rem 1.25rem",
-                  backgroundColor: "#2563eb",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "4px",
-                  fontWeight: "700",
-                  cursor: "pointer",
-                  fontSize: "0.85rem",
-                }}
+                🖨️ Print Receipt
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={() => setCompletedSale(null)}
+                style={{ flex: 1 }}
               >
-                + New Sale
-              </button>
+                Start New Sale
+              </Button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </div>
   );
 };
