@@ -2,6 +2,7 @@ export const DataTable = ({
   columns = [],
   data = [],
   keyField = "id",
+  keyExtractor,
   loading = false,
   emptyTitle,
   emptyMessage = "No records found.",
@@ -106,10 +107,15 @@ export const DataTable = ({
                 </td>
               </tr>
             ) : (
-              data.map((row, idx) => (
-                <tr
-                  key={row[keyField] ?? idx}
-                  onClick={() => onRowClick && onRowClick(row)}
+              data.map((row, idx) => {
+                const rowKey = keyExtractor
+                  ? keyExtractor(row, idx)
+                  : row[keyField] ?? row.product?.id ?? idx;
+
+                return (
+                  <tr
+                    key={rowKey}
+                    onClick={() => onRowClick && onRowClick(row)}
                   style={{
                     borderBottom: "1px solid var(--color-border-subtle)",
                     transition: "background-color var(--transition-fast)",
@@ -150,8 +156,8 @@ export const DataTable = ({
                     );
                   })}
                 </tr>
-              ))
-            )}
+              );
+            }))}
           </tbody>
         </table>
       </div>

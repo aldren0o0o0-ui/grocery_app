@@ -157,59 +157,8 @@ export const DashboardPage = () => {
           {/* ================================================================= */}
           {role === "OWNER" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              {/* Financial KPI Cards */}
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                  gap: "16px",
-                }}
-              >
-                <KpiCard
-                  title="Net Sales"
-                  value={formatCurrency(data.sales?.net_sales)}
-                  subtext={`Gross: ${formatCurrency(data.sales?.gross_sales)} - Ref: ${formatCurrency(data.sales?.refunds)}`}
-                  accentColor="var(--color-primary)"
-                  badge="Today"
-                  id="kpi-net-sales"
-                />
-                <KpiCard
-                  title="Transactions"
-                  value={data.sales?.transactions || 0}
-                  subtext="Sales completed today"
-                  accentColor="#3B82F6"
-                  badge="Today"
-                  id="kpi-transactions"
-                />
-                <KpiCard
-                  title="Estimated Gross Profit"
-                  value={formatCurrency(data.profit?.estimated_gross_profit)}
-                  subtext={`Net Sales - COGS (${formatCurrency(data.profit?.net_cogs)})`}
-                  accentColor="var(--color-primary)"
-                  badge="Estimate"
-                  id="kpi-gross-profit"
-                />
-                <KpiCard
-                  title="Estimated Net Profit"
-                  value={formatCurrency(data.profit?.estimated_net_profit)}
-                  subtext={`Gross Profit - Exp (${formatCurrency(data.profit?.operating_expenses)})`}
-                  accentColor={
-                    parseFloat(data.profit?.estimated_net_profit || 0) >= 0
-                      ? "var(--color-primary)"
-                      : "var(--color-danger)"
-                  }
-                  badge="Estimate"
-                  id="kpi-net-profit"
-                />
-                <KpiCard
-                  title="Operating Expenses"
-                  value={formatCurrency(data.profit?.operating_expenses)}
-                  subtext="Business date expenses"
-                  accentColor="var(--color-danger)"
-                  badge="Today"
-                  id="kpi-operating-expenses"
-                />
-              </div>
+              {/* Financial Performance & Profitability Line Chart */}
+              <FinancialPerformanceLineChart data={data} formatCurrency={formatCurrency} />
 
               {/* Secondary Operational Row */}
               <div
@@ -291,63 +240,11 @@ export const DashboardPage = () => {
                 </div>
 
                 {/* Top Selling Products */}
-                <div
-                  style={{
-                    backgroundColor: "var(--color-surface)",
-                    borderRadius: "var(--radius-lg)",
-                    padding: "20px",
-                    border: "1px solid var(--color-border)",
-                    boxShadow: "var(--shadow-sm)",
-                  }}
-                >
-                  <h2 style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text)", margin: "0 0 4px" }}>
-                    Top Selling Products
-                  </h2>
-                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                    Ranked by net quantity sold (sales minus returns)
-                  </span>
-
-                  <div style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                    {!data.top_products || data.top_products.length === 0 ? (
-                      <div style={{ padding: "32px 0", textAlign: "center", color: "var(--color-text-muted)", fontSize: "13px" }}>
-                        No product sales recorded for today.
-                      </div>
-                    ) : (
-                      data.top_products.map((p, idx) => {
-                        const maxQty = parseFloat(data.top_products[0].net_quantity_sold) || 1;
-                        const currentQty = parseFloat(p.net_quantity_sold) || 0;
-                        const pct = Math.min(100, Math.round((currentQty / maxQty) * 100));
-
-                        return (
-                          <div key={p.product_id} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
-                              <span style={{ fontWeight: 600, color: "var(--color-text)" }}>
-                                #{idx + 1} {p.name}
-                                <span style={{ color: "var(--color-text-muted)", marginLeft: "6px", fontSize: "11px" }}>
-                                  ({p.sku})
-                                </span>
-                              </span>
-                              <span style={{ fontWeight: 700, color: "var(--color-text)" }}>
-                                {formatNumber(p.net_quantity_sold)} {p.unit} ({formatCurrency(p.net_sales)})
-                              </span>
-                            </div>
-                            <div style={{ height: "6px", backgroundColor: "var(--color-bg)", borderRadius: "var(--radius-full)", overflow: "hidden" }}>
-                              <div
-                                style={{
-                                  height: "100%",
-                                  width: `${pct}%`,
-                                  backgroundColor: idx === 0 ? "var(--color-primary)" : "var(--color-primary-soft)",
-                                  borderRadius: "var(--radius-full)",
-                                  transition: "width 0.3s ease",
-                                }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
+                <TopSellingProductsWidget
+                  products={data.top_products}
+                  formatNumber={formatNumber}
+                  formatCurrency={formatCurrency}
+                />
 
                 {/* Expense Breakdown */}
                 <div
@@ -1229,6 +1126,755 @@ const SalesTrendBarChart = ({ trend, formatCurrency, hoveredDay, setHoveredDay }
           </>
         ) : (
           <span style={{ color: "var(--color-text-muted)" }}>Hover over a bar to inspect daily breakdown</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const FinancialPerformanceLineChart = ({ data, formatCurrency }) => {
+  const [hoveredPoint, setHoveredPoint] = useState(null);
+
+  const trend = data?.trend || [];
+  const sales = data?.sales || {};
+  const profit = data?.profit || {};
+
+  // Find max value across all days for scale
+  const rawMax = Math.max(
+    500,
+    ...trend.map((d) =>
+      Math.max(
+        parseFloat(d.gross_sales) || 0,
+        parseFloat(d.net_sales) || 0,
+        parseFloat(d.refunds) || 0
+      )
+    ),
+    parseFloat(sales.net_sales) || 0,
+    parseFloat(profit.estimated_gross_profit) || 0
+  );
+  const maxVal = Math.max(500, Math.ceil((rawMax * 1.25) / 100) * 100);
+
+  const chartWidth = 800;
+  const chartHeight = 220;
+  const padLeft = 70;
+  const padRight = 40;
+  const padTop = 25;
+  const padBottom = 45;
+  const usableWidth = chartWidth - padLeft - padRight;
+  const usableHeight = chartHeight - padTop - padBottom;
+
+  const yTiers = [0, 0.25, 0.5, 0.75, 1];
+
+  const points = trend.map((d, idx) => {
+    const x =
+      trend.length === 1
+        ? padLeft + usableWidth / 2
+        : padLeft + (idx / Math.max(1, trend.length - 1)) * usableWidth;
+
+    const net = Math.max(0, parseFloat(d.net_sales) || 0);
+    const gross = Math.max(0, parseFloat(d.gross_sales) || 0);
+    const refund = Math.max(0, parseFloat(d.refunds) || 0);
+
+    const yNet = padTop + (1 - net / maxVal) * usableHeight;
+    const yGross = padTop + (1 - gross / maxVal) * usableHeight;
+    const yRefund = padTop + (1 - refund / maxVal) * usableHeight;
+
+    return {
+      date: d.date,
+      idx,
+      x,
+      yNet,
+      yGross,
+      yRefund,
+      net,
+      gross,
+      refund,
+    };
+  });
+
+  // Net sales line
+  const netLinePath =
+    points.length === 0
+      ? ""
+      : points.length === 1
+      ? `M ${padLeft} ${points[0].yNet} L ${padLeft + usableWidth} ${points[0].yNet}`
+      : points.reduce(
+          (acc, pt, i) => `${acc} ${i === 0 ? "M" : "L"} ${pt.x.toFixed(1)} ${pt.yNet.toFixed(1)}`,
+          ""
+        );
+
+  // Net sales area gradient
+  const netAreaPath =
+    points.length === 0
+      ? ""
+      : points.length === 1
+      ? `M ${padLeft} ${points[0].yNet} L ${padLeft + usableWidth} ${points[0].yNet} L ${padLeft + usableWidth} ${padTop + usableHeight} L ${padLeft} ${padTop + usableHeight} Z`
+      : `${netLinePath} L ${points[points.length - 1].x.toFixed(1)} ${padTop + usableHeight} L ${points[0].x.toFixed(1)} ${padTop + usableHeight} Z`;
+
+  // Gross sales line
+  const grossLinePath =
+    points.length === 0
+      ? ""
+      : points.length === 1
+      ? `M ${padLeft} ${points[0].yGross} L ${padLeft + usableWidth} ${points[0].yGross}`
+      : points.reduce(
+          (acc, pt, i) => `${acc} ${i === 0 ? "M" : "L"} ${pt.x.toFixed(1)} ${pt.yGross.toFixed(1)}`,
+          ""
+        );
+
+  // Refunds line
+  const refundLinePath =
+    points.length === 0
+      ? ""
+      : points.length === 1
+      ? `M ${padLeft} ${points[0].yRefund} L ${padLeft + usableWidth} ${points[0].yRefund}`
+      : points.reduce(
+          (acc, pt, i) => `${acc} ${i === 0 ? "M" : "L"} ${pt.x.toFixed(1)} ${pt.yRefund.toFixed(1)}`,
+          ""
+        );
+
+  return (
+    <div
+      style={{
+        backgroundColor: "var(--color-surface)",
+        borderRadius: "var(--radius-lg)",
+        padding: "20px 24px",
+        border: "1px solid var(--color-border)",
+        boxShadow: "var(--shadow-sm)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px",
+      }}
+    >
+      {/* Header with Title and Legend */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "14px",
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+            Financial & Profitability Performance Trend
+          </h2>
+          <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+            Continuous line trend tracking Net Sales, Gross Revenue, and Refunds with profitability indicators
+          </span>
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
+            <span
+              style={{
+                width: "18px",
+                height: "3px",
+                backgroundColor: "#10B981",
+                borderRadius: "2px",
+                display: "inline-block",
+              }}
+            />
+            <span style={{ fontWeight: 600 }}>Net Sales</span>
+          </div>
+
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
+            <span
+              style={{
+                width: "18px",
+                height: "2.5px",
+                backgroundColor: "#3B82F6",
+                borderRadius: "2px",
+                display: "inline-block",
+              }}
+            />
+            <span style={{ fontWeight: 600 }}>Gross Revenue</span>
+          </div>
+
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
+            <span
+              style={{
+                width: "18px",
+                height: "0px",
+                borderTop: "2px dashed #EF4444",
+                display: "inline-block",
+              }}
+            />
+            <span style={{ fontWeight: 600 }}>Refunds</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Embedded Executive Financial Metrics Strip (Preserving the 5 KPIs) */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+          gap: "12px",
+          padding: "12px 14px",
+          backgroundColor: "var(--color-bg)",
+          borderRadius: "var(--radius-md)",
+          border: "1px solid var(--color-border-subtle)",
+        }}
+      >
+        {/* Metric 1: Net Sales */}
+        <div id="kpi-net-sales" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+            Net Sales (Today)
+          </span>
+          <span style={{ fontSize: "18px", fontWeight: 800, color: "var(--color-text)", fontFamily: "var(--font-mono)" }}>
+            {formatCurrency(sales?.net_sales)}
+          </span>
+          <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+            Gross: {formatCurrency(sales?.gross_sales)} - Ref: {formatCurrency(sales?.refunds)}
+          </span>
+        </div>
+
+        {/* Metric 2: Transactions */}
+        <div id="kpi-transactions" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+            Transactions
+          </span>
+          <span style={{ fontSize: "18px", fontWeight: 800, color: "#3B82F6", fontFamily: "var(--font-mono)" }}>
+            {sales?.transactions || 0}
+          </span>
+          <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+            Sales completed today
+          </span>
+        </div>
+
+        {/* Metric 3: Estimated Gross Profit */}
+        <div id="kpi-gross-profit" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+            Est. Gross Profit
+          </span>
+          <span style={{ fontSize: "18px", fontWeight: 800, color: "var(--color-primary)", fontFamily: "var(--font-mono)" }}>
+            {formatCurrency(profit?.estimated_gross_profit)}
+          </span>
+          <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+            Net Sales - COGS ({formatCurrency(profit?.net_cogs)})
+          </span>
+        </div>
+
+        {/* Metric 4: Estimated Net Profit */}
+        <div id="kpi-net-profit" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+            Est. Net Profit
+          </span>
+          <span
+            style={{
+              fontSize: "18px",
+              fontWeight: 800,
+              fontFamily: "var(--font-mono)",
+              color: parseFloat(profit?.estimated_net_profit || 0) >= 0 ? "var(--color-primary)" : "var(--color-danger)",
+            }}
+          >
+            {formatCurrency(profit?.estimated_net_profit)}
+          </span>
+          <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+            Gross Profit - Exp ({formatCurrency(profit?.operating_expenses)})
+          </span>
+        </div>
+
+        {/* Metric 5: Operating Expenses */}
+        <div id="kpi-operating-expenses" style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+          <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", textTransform: "uppercase" }}>
+            Operating Expenses
+          </span>
+          <span style={{ fontSize: "18px", fontWeight: 800, color: "var(--color-danger)", fontFamily: "var(--font-mono)" }}>
+            {formatCurrency(profit?.operating_expenses)}
+          </span>
+          <span style={{ fontSize: "11px", color: "var(--color-text-muted)" }}>
+            Business date expenses
+          </span>
+        </div>
+      </div>
+
+      {/* Interactive Tooltip Inspector Bar */}
+      <div
+        style={{
+          padding: "8px 14px",
+          borderRadius: "var(--radius-md)",
+          backgroundColor: hoveredPoint ? "var(--color-bg)" : "transparent",
+          border: hoveredPoint ? "1px solid var(--color-border-subtle)" : "1px dashed var(--color-border-subtle)",
+          minHeight: "36px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: "12px",
+          transition: "all 0.2s ease",
+        }}
+      >
+        {hoveredPoint ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div>
+              <strong style={{ color: "var(--color-text)", fontSize: "13px" }}>{hoveredPoint.date}</strong>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "18px" }}>
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Net Sales: </span>
+                <strong style={{ color: "#10B981", fontFamily: "var(--font-mono)" }}>
+                  {formatCurrency(hoveredPoint.net)}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Gross Revenue: </span>
+                <strong style={{ color: "#3B82F6", fontFamily: "var(--font-mono)" }}>
+                  {formatCurrency(hoveredPoint.gross)}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Refunds: </span>
+                <strong style={{ color: "#EF4444", fontFamily: "var(--font-mono)" }}>
+                  {formatCurrency(hoveredPoint.refund)}
+                </strong>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <span style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>
+            Tip: Hover over data nodes on the line chart to inspect daily financial figures.
+          </span>
+        )}
+      </div>
+
+      {/* SVG Multi-Line Chart Canvas */}
+      <div style={{ width: "100%", overflowX: "auto" }}>
+        <svg
+          viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+          style={{ width: "100%", height: "220px", minWidth: "500px", display: "block" }}
+          onMouseLeave={() => setHoveredPoint(null)}
+        >
+          <defs>
+            <linearGradient id="netSalesAreaGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#10B981" stopOpacity="0.22" />
+              <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Horizontal Gridlines & Y-Axis Labels */}
+          {yTiers.map((tier) => {
+            const y = padTop + (1 - tier) * usableHeight;
+            const labelVal = Math.round(maxVal * tier);
+            return (
+              <g key={tier}>
+                <line
+                  x1={padLeft}
+                  y1={y}
+                  x2={padLeft + usableWidth}
+                  y2={y}
+                  stroke="var(--color-border-subtle)"
+                  strokeWidth="1"
+                  strokeDasharray={tier === 0 ? "none" : "3 3"}
+                  opacity={tier === 0 ? 0.9 : 0.6}
+                />
+                <text
+                  x={padLeft - 10}
+                  y={y + 4}
+                  textAnchor="end"
+                  fill="var(--color-text-secondary)"
+                  fontSize="10px"
+                  fontFamily="var(--font-mono)"
+                >
+                  ₱{labelVal.toLocaleString()}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Area under Net Sales */}
+          {netAreaPath && <path d={netAreaPath} fill="url(#netSalesAreaGrad)" />}
+
+          {/* Gross Sales Line */}
+          {grossLinePath && (
+            <path
+              d={grossLinePath}
+              fill="none"
+              stroke="#3B82F6"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.85"
+            />
+          )}
+
+          {/* Refunds Line */}
+          {refundLinePath && (
+            <path
+              d={refundLinePath}
+              fill="none"
+              stroke="#EF4444"
+              strokeWidth="1.75"
+              strokeDasharray="5 3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
+          {/* Net Sales Line */}
+          {netLinePath && (
+            <path
+              d={netLinePath}
+              fill="none"
+              stroke="#10B981"
+              strokeWidth="2.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
+          {/* Guideline on Hover */}
+          {hoveredPoint && (
+            <line
+              x1={hoveredPoint.x}
+              y1={padTop}
+              x2={hoveredPoint.x}
+              y2={padTop + usableHeight}
+              stroke="var(--color-text-secondary)"
+              strokeWidth="1"
+              strokeDasharray="2 2"
+              opacity="0.75"
+            />
+          )}
+
+          {/* Interactive Data Points */}
+          {points.map((pt) => {
+            const isHovered = hoveredPoint?.date === pt.date;
+
+            return (
+              <g
+                key={pt.date}
+                style={{ cursor: "pointer" }}
+                onMouseEnter={() => setHoveredPoint(pt)}
+              >
+                {/* Gross Sales Dot */}
+                {pt.gross > 0 && (
+                  <circle
+                    cx={pt.x}
+                    cy={pt.yGross}
+                    r={isHovered ? "4.5" : "3"}
+                    fill="#3B82F6"
+                    stroke="var(--color-surface)"
+                    strokeWidth="1.5"
+                  />
+                )}
+
+                {/* Refund Dot */}
+                {pt.refund > 0 && (
+                  <circle
+                    cx={pt.x}
+                    cy={pt.yRefund}
+                    r={isHovered ? "4" : "2.5"}
+                    fill="#EF4444"
+                    stroke="var(--color-surface)"
+                    strokeWidth="1.5"
+                  />
+                )}
+
+                {/* Net Sales Outer Halo on Hover */}
+                {isHovered && (
+                  <circle
+                    cx={pt.x}
+                    cy={pt.yNet}
+                    r="9"
+                    fill="none"
+                    stroke="#10B981"
+                    strokeWidth="2.5"
+                    opacity="0.4"
+                  />
+                )}
+
+                {/* Net Sales Dot */}
+                <circle
+                  cx={pt.x}
+                  cy={pt.yNet}
+                  r={isHovered ? "5.5" : "4"}
+                  fill={pt.net > 0 ? "#10B981" : "var(--color-border)"}
+                  stroke="var(--color-surface)"
+                  strokeWidth="2"
+                />
+
+                {/* X-Axis Date Label */}
+                <text
+                  x={pt.x}
+                  y={padTop + usableHeight + 18}
+                  textAnchor="middle"
+                  fill={isHovered ? "var(--color-text)" : "var(--color-text-secondary)"}
+                  fontSize="11px"
+                  fontWeight={isHovered ? 700 : 500}
+                >
+                  {pt.date.slice(5)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    </div>
+  );
+};
+
+const TopSellingProductsWidget = ({ products, formatNumber, formatCurrency }) => {
+  const list = Array.isArray(products) ? products : [];
+  const maxQty =
+    list.length > 0
+      ? Math.max(
+          ...list.map((p) => parseFloat(p.net_quantity_sold) || 0),
+          1
+        )
+      : 1;
+
+  const getRankBadgeStyle = (idx) => {
+    switch (idx) {
+      case 0:
+        return {
+          bg: "#FEF3C7",
+          color: "#B45309",
+          border: "#FDE68A",
+          barGradient: "linear-gradient(90deg, #10B981, #059669)",
+        };
+      case 1:
+        return {
+          bg: "#F1F5F9",
+          color: "#475569",
+          border: "#E2E8F0",
+          barGradient: "linear-gradient(90deg, #34D399, #10B981)",
+        };
+      case 2:
+        return {
+          bg: "#FFEDD5",
+          color: "#C2410C",
+          border: "#FED7AA",
+          barGradient: "linear-gradient(90deg, #6EE7B7, #10B981)",
+        };
+      default:
+        return {
+          bg: "var(--color-bg)",
+          color: "var(--color-text-secondary)",
+          border: "var(--color-border)",
+          barGradient: "linear-gradient(90deg, #93C5FD, #3B82F6)",
+        };
+    }
+  };
+
+  return (
+    <div
+      id="top-selling-products-widget"
+      style={{
+        backgroundColor: "var(--color-surface)",
+        borderRadius: "var(--radius-lg)",
+        padding: "20px",
+        border: "1px solid var(--color-border)",
+        boxShadow: "var(--shadow-sm)",
+        display: "flex",
+        flexDirection: "column",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: "16px",
+        }}
+      >
+        <div>
+          <h2
+            style={{
+              fontSize: "15px",
+              fontWeight: 700,
+              color: "var(--color-text)",
+              margin: "0 0 4px",
+            }}
+          >
+            Top Selling Products
+          </h2>
+          <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+            Ranked by net quantity sold (sales minus returns)
+          </span>
+        </div>
+        {list.length > 0 && (
+          <span
+            style={{
+              fontSize: "11px",
+              padding: "2px 8px",
+              backgroundColor: "var(--color-primary-soft)",
+              color: "var(--color-primary)",
+              fontWeight: 600,
+              borderRadius: "var(--radius-full)",
+            }}
+          >
+            {list.length} {list.length === 1 ? "Product" : "Products"}
+          </span>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "10px", flex: 1 }}>
+        {list.length === 0 ? (
+          <div
+            style={{
+              padding: "36px 16px",
+              textAlign: "center",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: "8px",
+              color: "var(--color-text-muted)",
+              fontSize: "13px",
+              backgroundColor: "var(--color-bg)",
+              borderRadius: "var(--radius-md)",
+              border: "1px dashed var(--color-border)",
+            }}
+          >
+            <div style={{ fontWeight: 600, color: "var(--color-text-secondary)" }}>
+              No product sales recorded for today
+            </div>
+            <div style={{ fontSize: "12px", maxWidth: "280px" }}>
+              Products sold via POS register will appear and rank here in real time.
+            </div>
+          </div>
+        ) : (
+          list.map((p, idx) => {
+            const currentQty = parseFloat(p.net_quantity_sold) || 0;
+            const pct =
+              maxQty > 0
+                ? Math.min(100, Math.max(6, Math.round((currentQty / maxQty) * 100)))
+                : 0;
+            const rankStyle = getRankBadgeStyle(idx);
+
+            return (
+              <div
+                key={p.product_id}
+                id={`top-product-${p.product_id}`}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                  padding: "8px 10px",
+                  borderRadius: "var(--radius-md)",
+                  transition: "background-color 0.15s ease",
+                  backgroundColor: "transparent",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = "var(--color-bg)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = "transparent";
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    fontSize: "13px",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <span
+                      id={`top-product-rank-${idx + 1}`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minWidth: "22px",
+                        height: "22px",
+                        padding: "0 4px",
+                        borderRadius: "var(--radius-sm)",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        backgroundColor: rankStyle.bg,
+                        color: rankStyle.color,
+                        border: `1px solid ${rankStyle.border}`,
+                      }}
+                    >
+                      #{idx + 1}
+                    </span>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color: "var(--color-text)",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {p.name}
+                    </span>
+                    <span
+                      style={{
+                        color: "var(--color-text-muted)",
+                        fontSize: "11px",
+                        fontFamily: "var(--font-mono)",
+                        backgroundColor: "var(--color-bg)",
+                        padding: "1px 5px",
+                        borderRadius: "3px",
+                      }}
+                    >
+                      {p.sku}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{
+                      textAlign: "right",
+                      whiteSpace: "nowrap",
+                      marginLeft: "10px",
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color: "var(--color-text)",
+                        fontSize: "13px",
+                      }}
+                    >
+                      {formatNumber(p.net_quantity_sold)} {p.unit}
+                    </span>
+                    <span
+                      style={{
+                        color: "var(--color-text-secondary)",
+                        marginLeft: "6px",
+                        fontSize: "12px",
+                        fontWeight: 500,
+                      }}
+                    >
+                      ({formatCurrency(p.net_sales)})
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    height: "7px",
+                    backgroundColor: "var(--color-bg)",
+                    borderRadius: "var(--radius-full)",
+                    overflow: "hidden",
+                    border: "1px solid var(--color-border-subtle)",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${pct}%`,
+                      background: rankStyle.barGradient,
+                      borderRadius: "var(--radius-full)",
+                      transition: "width 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          })
         )}
       </div>
     </div>

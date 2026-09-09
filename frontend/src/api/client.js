@@ -21,11 +21,18 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-const apiClient = axios.create({
-  baseURL:
-    (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
-    "http://127.0.0.1:5000/api",
+const getBaseUrl = () => {
+  if (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window === "undefined") {
+    return "http://127.0.0.1:5000/api";
+  }
+  return "/api";
+};
 
+const apiClient = axios.create({
+  baseURL: getBaseUrl(),
   withCredentials: true,
   headers: {
     "Content-Type": "application/json",
@@ -50,7 +57,18 @@ apiClient.interceptors.response.use(
     // Skip refresh for auth endpoints to prevent infinite refresh loops
     const isAuthEndpoint = originalRequest?.url?.includes("/auth/");
 
-    if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
+    // Only attempt refresh if there is an active access token or stored session indicator
+    const hasSessionHint =
+      !!accessToken ||
+      (typeof window !== "undefined" &&
+        window.localStorage?.getItem("grocery_has_session") === "true");
+
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      !isAuthEndpoint &&
+      hasSessionHint
+    ) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -76,6 +94,13 @@ apiClient.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         setAccessToken(null);
+        if (typeof window !== "undefined" && window.localStorage) {
+          try {
+            window.localStorage.removeItem("grocery_has_session");
+          } catch {
+            // ignore
+          }
+        }
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

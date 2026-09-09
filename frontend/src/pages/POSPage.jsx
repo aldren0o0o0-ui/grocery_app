@@ -204,25 +204,27 @@ export const POSPage = () => {
     setCheckoutSubmitting(true);
     try {
       const payload = {
-        payment_method: paymentMethod,
         discount: parsedDiscount.toFixed(2),
-        amount_paid: paymentMethod === "CASH" ? parseFloat(amountPaid || 0).toFixed(2) : cartTotal.toFixed(2),
+        payment: {
+          method: paymentMethod,
+          amount_paid: paymentMethod === "CASH" ? parseFloat(amountPaid || 0).toFixed(2) : cartTotal.toFixed(2),
+        },
         items: cart.map((item) => ({
           product_id: item.product.id,
-          quantity: item.quantity,
-          unit_price: item.product.selling_price,
+          quantity: typeof item.quantity === "number" ? item.quantity.toFixed(3) : item.quantity.toString(),
         })),
       };
 
       const res = await checkoutSaleApi(payload);
-      if (res.status === "success") {
-        setCompletedSale(res.data);
+
+      if (res?.sale || res?.status === "success") {
+        setCompletedSale(res.sale || res.data);
         setIsCheckoutModalOpen(false);
         setCart([]);
         setDiscount("0.00");
         fetchProducts(search);
       } else {
-        setCheckoutError(res.message || "Checkout failed.");
+        setCheckoutError(res?.message || "Checkout failed.");
       }
     } catch (err) {
       setCheckoutError(err.response?.data?.error?.message || err.message || "Failed to process sale.");

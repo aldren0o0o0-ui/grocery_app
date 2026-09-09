@@ -14,12 +14,26 @@ export const AuthProvider = ({ children }) => {
     setAccessToken(token);
     setAxiosAccessToken(token);
     setUser(userData);
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.setItem("grocery_has_session", "true");
+      }
+    } catch {
+      // ignore storage access errors
+    }
   }, []);
 
   const clearAuth = useCallback(() => {
     setAccessToken(null);
     setAxiosAccessToken(null);
     setUser(null);
+    try {
+      if (typeof window !== "undefined" && window.localStorage) {
+        window.localStorage.removeItem("grocery_has_session");
+      }
+    } catch {
+      // ignore storage access errors
+    }
   }, []);
 
   const login = async (email, password) => {
@@ -60,18 +74,47 @@ export const AuthProvider = ({ children }) => {
 
   // Silent session restore on initial page load via HttpOnly cookie
   useEffect(() => {
+    let ignore = false;
+
     const initAuth = async () => {
+      let hasSessionHint = false;
+      try {
+        if (typeof window !== "undefined" && window.localStorage) {
+          hasSessionHint = window.localStorage.getItem("grocery_has_session") === "true";
+        }
+      } catch {
+        hasSessionHint = false;
+      }
+
+      if (!hasSessionHint) {
+        if (!ignore) {
+          clearAuth();
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
         const data = await refreshApi();
-        applyAuthSuccess(data.access_token, data.user);
+        if (!ignore) {
+          applyAuthSuccess(data.access_token, data.user);
+        }
       } catch {
-        clearAuth();
+        if (!ignore) {
+          clearAuth();
+        }
       } finally {
-        setIsLoading(false);
+        if (!ignore) {
+          setIsLoading(false);
+        }
       }
     };
 
     initAuth();
+
+    return () => {
+      ignore = true;
+    };
   }, [applyAuthSuccess, clearAuth]);
 
   const value = {

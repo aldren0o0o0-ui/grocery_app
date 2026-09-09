@@ -2,8 +2,6 @@
  Grocery SME Management System - Account Provisioning 
 =======================================================
 -------------------------------------------------------
-SUCCESS: Account created successfully!
-  ID:         199
   Role:       OWNER
   Name:       John Miller
   Email:      owner@gmail.com
@@ -12,10 +10,5 @@ SUCCESS: Account created successfully!
   Role:       CASHIER
   Name:       Maria Santos
   Email:      maria@gmail.com
-  Status:     Active
-
-  Role:       STAFF
-  Name:       Gemy Santos
-  Email:      gemy@gmail.com
   Status:     Active
 -------------------------------------------------------

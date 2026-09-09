@@ -23,12 +23,13 @@ import {
 
 export const InventoryPage = () => {
   const { user } = useAuth();
-  const canAdjust = user?.role === "OWNER";
+  const canAdjust = user?.role === "OWNER" || user?.role?.name === "OWNER";
 
   const [items, setItems] = useState([]);
   const [categories, setCategories] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, per_page: 10, total: 0, pages: 1 });
-  const [search, setSearch] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeSearch, setActiveSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [stockStatusFilter, setStockStatusFilter] = useState("ALL");
   const [loading, setLoading] = useState(true);
@@ -59,18 +60,18 @@ export const InventoryPage = () => {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState("");
 
-  // Load categories for dropdown
+  // Load categories for filter dropdown
   useEffect(() => {
     let ignore = false;
     const fetchCats = async () => {
       try {
         const res = await getCategoriesApi({ is_active: true, per_page: 100 });
         if (!ignore) {
-          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
-          setCategories(items);
+          const catList = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          setCategories(catList);
         }
       } catch {
-        // Ignore category load error silently
+        // Non-blocking category fetch error
       }
     };
     fetchCats();
@@ -84,30 +85,37 @@ export const InventoryPage = () => {
     let ignore = false;
     const fetchInventory = async () => {
       try {
+        setLoading(true);
+        setError("");
         const params = {
-          page: pagination.page,
+          page: pagination.page || 1,
           per_page: 10,
           stock_status: stockStatusFilter,
         };
-        if (search.trim()) params.search = search.trim();
-        if (categoryFilter) params.category_id = categoryFilter;
+        if (activeSearch.trim()) params.search = activeSearch.trim();
+        if (categoryFilter) params.category_id = parseInt(categoryFilter, 10);
 
         const res = await getInventoryApi(params);
         if (!ignore) {
-          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+          const rawItems = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
           const pag = res?.data?.pagination || res?.pagination || {
             page: pagination.page,
             per_page: 10,
-            total: items.length,
+            total: rawItems.length,
             pages: 1,
           };
-          setItems(items);
+          setItems(rawItems);
           setPagination(pag);
-          setError("");
         }
       } catch (err) {
         if (!ignore) {
-          setError(err.response?.data?.message || err.message || "Network error loading inventory.");
+          const errMsg =
+            err.response?.data?.error?.message ||
+            err.response?.data?.message ||
+            err.message ||
+            "Network error loading inventory.";
+          setError(errMsg);
+          setItems([]);
         }
       } finally {
         if (!ignore) {
@@ -120,11 +128,12 @@ export const InventoryPage = () => {
     return () => {
       ignore = true;
     };
-  }, [search, categoryFilter, stockStatusFilter, pagination.page, refreshTrigger]);
+  }, [pagination.page, stockStatusFilter, activeSearch, categoryFilter, refreshTrigger]);
 
   // Load movement history for a selected product
   useEffect(() => {
-    if (!isHistoryOpen || !historyProduct) return;
+    const prodId = historyProduct?.id || historyProduct?.product?.id;
+    if (!isHistoryOpen || !prodId) return;
 
     let ignore = false;
     const fetchHistory = async () => {
@@ -132,21 +141,42 @@ export const InventoryPage = () => {
         setHistoryLoading(true);
         setHistoryError("");
         const params = {
-          page: historyPagination.page,
+          page: historyPagination.page || 1,
           per_page: 10,
         };
         if (movementTypeFilter) params.movement_type = movementTypeFilter;
 
-        const res = await getStockMovementsApi(historyProduct.id, params);
+        const res = await getStockMovementsApi(prodId, params);
         if (!ignore) {
-          const items = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
-          const pag = res?.data?.pagination || res?.pagination || { page: 1, per_page: 10, total: items.length, pages: 1 };
-          setMovements(items);
-          setHistoryPagination(pag);
+          if (res?.status === "error") {
+            setHistoryError(res?.error?.message || "Failed to load stock history.");
+            setMovements([]);
+          } else {
+            const historyItems = res?.data?.items || res?.items || (Array.isArray(res) ? res : []);
+            const pag = res?.data?.pagination || res?.pagination || {
+              page: 1,
+              per_page: 10,
+              total: historyItems.length,
+              pages: 1,
+            };
+            setMovements(historyItems);
+            setHistoryPagination(pag);
+          }
         }
       } catch (err) {
         if (!ignore) {
-          setHistoryError(err.response?.data?.message || err.message || "Failed to load stock history.");
+          if (err.response?.status === 404) {
+            setHistoryError("Product record not found. The inventory catalog has been refreshed.");
+            setRefreshTrigger((prev) => prev + 1);
+          } else {
+            const errMsg =
+              err.response?.data?.error?.message ||
+              err.response?.data?.message ||
+              err.message ||
+              "Failed to load stock history.";
+            setHistoryError(errMsg);
+          }
+          setMovements([]);
         }
       } finally {
         if (!ignore) {
@@ -163,13 +193,20 @@ export const InventoryPage = () => {
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
-    setLoading(true);
+    setActiveSearch(searchTerm.trim());
     setPagination((prev) => ({ ...prev, page: 1 }));
-    setRefreshTrigger((prev) => prev + 1);
   };
 
-  const handleOpenAdjust = (product) => {
-    setSelectedProduct(product);
+  const handleSearchClear = () => {
+    setSearchTerm("");
+    setActiveSearch("");
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+
+  const handleOpenAdjust = (itemOrProduct) => {
+    const p = itemOrProduct?.product || itemOrProduct;
+    const stockQty = itemOrProduct?.stock_quantity ?? p?.stock_quantity ?? "0.000";
+    setSelectedProduct({ ...p, stock_quantity: stockQty });
     setAdjustData({
       direction: "IN",
       quantity: "",
@@ -186,8 +223,12 @@ export const InventoryPage = () => {
     setAdjustError("");
   };
 
-  const handleOpenHistory = (product) => {
-    setHistoryProduct(product);
+  const handleOpenHistory = (itemOrProduct) => {
+    const p = itemOrProduct?.product || itemOrProduct;
+    const stockQty = itemOrProduct?.stock_quantity ?? p?.stock_quantity ?? "0.000";
+    setHistoryProduct({ ...p, stock_quantity: stockQty });
+    setHistoryError("");
+    setMovements([]);
     setMovementTypeFilter("");
     setHistoryPagination({ page: 1, per_page: 10, total: 0, pages: 1 });
     setIsHistoryOpen(true);
@@ -196,6 +237,7 @@ export const InventoryPage = () => {
   const handleCloseHistory = () => {
     setIsHistoryOpen(false);
     setHistoryProduct(null);
+    setHistoryError("");
     setMovements([]);
   };
 
@@ -203,12 +245,12 @@ export const InventoryPage = () => {
     e.preventDefault();
     const qty = parseFloat(adjustData.quantity);
     if (isNaN(qty) || qty <= 0) {
-      setAdjustError("Please enter a valid positive quantity.");
+      setAdjustError("Please enter a valid positive quantity greater than zero.");
       return;
     }
 
+    const currentStock = parseFloat(selectedProduct?.stock_quantity ?? 0);
     if (adjustData.direction === "OUT") {
-      const currentStock = parseFloat(selectedProduct.stock_quantity);
       if (qty > currentStock) {
         setAdjustError(
           `Cannot deduct ${qty.toFixed(3)}. Available stock is only ${currentStock.toFixed(3)}.`
@@ -221,22 +263,37 @@ export const InventoryPage = () => {
     setAdjustError("");
 
     try {
+      // Defensively map reasons to certified backend enum VALID_REASONS
+      const normalizedReason =
+        adjustData.reason === "DAMAGE"
+          ? "DAMAGED"
+          : adjustData.reason === "EXPIRY"
+          ? "EXPIRED"
+          : adjustData.reason === "THEFT"
+          ? "OTHER"
+          : adjustData.reason;
+
       await createStockAdjustmentApi({
         product_id: selectedProduct.id,
         direction: adjustData.direction,
-        quantity: adjustData.quantity.trim(),
-        reason: adjustData.reason,
-        remarks: adjustData.remarks.trim() || null,
+        quantity: qty.toFixed(3),
+        reason: normalizedReason,
+        remarks: adjustData.remarks?.trim() || null,
       });
+
       setToastMessage({
         type: "success",
         text: `Stock adjusted for "${selectedProduct.name}" successfully.`,
       });
       setIsAdjustModalOpen(false);
-      setLoading(true);
       setRefreshTrigger((prev) => prev + 1);
     } catch (err) {
-      setAdjustError(err.response?.data?.message || err.message || "Failed to adjust stock.");
+      const errMsg =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to adjust stock.";
+      setAdjustError(errMsg);
     } finally {
       setAdjustSubmitting(false);
     }
@@ -246,7 +303,8 @@ export const InventoryPage = () => {
   const calculateProjectedStock = () => {
     if (!selectedProduct) return null;
     const current = parseFloat(selectedProduct.stock_quantity) || 0;
-    const qty = parseFloat(adjustData.quantity) || 0;
+    const qty = parseFloat(adjustData.quantity);
+    if (isNaN(qty) || qty <= 0) return null;
     if (adjustData.direction === "IN") {
       return (current + qty).toFixed(3);
     }
@@ -258,53 +316,65 @@ export const InventoryPage = () => {
   const columns = [
     {
       header: "Product",
-      accessor: (row) => (
-        <div>
-          <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{row.product.name}</div>
-          {row.product.barcode && (
-            <div style={{ fontSize: "11px", color: "var(--color-text-muted)", fontFamily: "var(--font-mono)" }}>
-              {row.product.barcode}
-            </div>
-          )}
-        </div>
-      ),
+      accessor: (row) => {
+        const p = row.product || row;
+        return (
+          <div>
+            <div style={{ fontWeight: 600, color: "var(--color-text)" }}>{p.name || "Unnamed Product"}</div>
+            {p.barcode && (
+              <div style={{ fontSize: "11px", color: "var(--color-text-muted)", fontFamily: "var(--font-mono)" }}>
+                {p.barcode}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       header: "SKU",
-      accessor: (row) => (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--color-text-secondary)" }}>
-          {row.product.sku}
-        </span>
-      ),
+      accessor: (row) => {
+        const p = row.product || row;
+        return (
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+            {p.sku || "—"}
+          </span>
+        );
+      },
     },
     {
       header: "Category",
-      accessor: (row) => (
-        <span
-          style={{
-            backgroundColor: "var(--color-bg)",
-            border: "1px solid var(--color-border-subtle)",
-            color: "var(--color-text)",
-            padding: "2px 8px",
-            borderRadius: "var(--radius-sm)",
-            fontSize: "12px",
-            fontWeight: 500,
-          }}
-        >
-          {row.product.category?.name || "Uncategorized"}
-        </span>
-      ),
+      accessor: (row) => {
+        const p = row.product || row;
+        return (
+          <span
+            style={{
+              backgroundColor: "var(--color-bg)",
+              border: "1px solid var(--color-border-subtle)",
+              color: "var(--color-text)",
+              padding: "2px 8px",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "12px",
+              fontWeight: 500,
+            }}
+          >
+            {p.category?.name || "Uncategorized"}
+          </span>
+        );
+      },
     },
     {
       header: "Unit",
-      accessor: (row) => row.product.unit,
+      accessor: (row) => {
+        const p = row.product || row;
+        return p.unit || "pcs";
+      },
     },
     {
       header: "Current Stock",
       align: "right",
       accessor: (row) => {
-        const isOut = row.is_out_of_stock;
-        const isLow = row.is_low_stock;
+        const isOut = Boolean(row.is_out_of_stock);
+        const isLow = Boolean(row.is_low_stock);
         return (
           <strong
             style={{
@@ -313,7 +383,7 @@ export const InventoryPage = () => {
               color: isOut ? "var(--color-danger)" : isLow ? "var(--color-warning)" : "var(--color-success)",
             }}
           >
-            {row.stock_quantity}
+            {row.stock_quantity ?? "0.000"}
           </strong>
         );
       },
@@ -323,7 +393,7 @@ export const InventoryPage = () => {
       align: "right",
       accessor: (row) => (
         <span style={{ fontFamily: "var(--font-mono)", fontSize: "13px", color: "var(--color-text-secondary)" }}>
-          {row.reorder_level}
+          {row.reorder_level ?? "0.000"}
         </span>
       ),
     },
@@ -343,7 +413,7 @@ export const InventoryPage = () => {
       header: "Actions",
       align: "right",
       accessor: (row) => {
-        const p = row.product;
+        const p = row.product || row;
         return (
           <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
             {canAdjust && (
@@ -398,380 +468,11 @@ export const InventoryPage = () => {
 
       {/* Stock Level & Safety Threshold Bar Chart Section */}
       {showAnalytics && (
-        <div
-          style={{
-            backgroundColor: "var(--color-surface)",
-            borderRadius: "var(--radius-lg)",
-            padding: "20px 24px",
-            border: "1px solid var(--color-border)",
-            boxShadow: "var(--shadow-sm)",
-            display: "flex",
-            flexDirection: "column",
-            gap: "16px",
-          }}
-        >
-          {/* Chart Header */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "flex-start",
-              flexWrap: "wrap",
-              gap: "12px",
-            }}
-          >
-            <div>
-              <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
-                Stock Level & Safety Reorder Threshold
-              </h2>
-              <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                Comparative bar chart displaying on-hand stock quantities against safety reorder thresholds
-              </span>
-            </div>
-
-            {/* Legend & Summary Badges */}
-            <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
-              {/* Legend 1: Current Stock */}
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
-                <span
-                  style={{
-                    width: "14px",
-                    height: "14px",
-                    backgroundColor: "#10B981",
-                    borderRadius: "3px",
-                    display: "inline-block",
-                  }}
-                />
-                <span style={{ fontWeight: 600 }}>Current Stock</span>
-              </div>
-
-              {/* Legend 2: Reorder Level */}
-              <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
-                <span
-                  style={{
-                    width: "14px",
-                    height: "14px",
-                    backgroundColor: "rgba(245, 158, 11, 0.25)",
-                    border: "1.5px solid #F59E0B",
-                    borderRadius: "3px",
-                    display: "inline-block",
-                  }}
-                />
-                <span style={{ fontWeight: 600 }}>Reorder Threshold</span>
-              </div>
-
-              {/* Quick Status Pill */}
-              <div
-                style={{
-                  fontSize: "12px",
-                  padding: "3px 10px",
-                  borderRadius: "var(--radius-full)",
-                  backgroundColor: "var(--color-bg)",
-                  border: "1px solid var(--color-border)",
-                  color: "var(--color-text-secondary)",
-                  display: "flex",
-                  gap: "6px",
-                  alignItems: "center",
-                }}
-              >
-                <span>{items.length} items plotted</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Interactive Inspection Bar (if hovered, shows item detail; else shows guide) */}
-          <div
-            style={{
-              padding: "8px 14px",
-              borderRadius: "var(--radius-md)",
-              backgroundColor: hoveredPoint ? "var(--color-bg)" : "transparent",
-              border: hoveredPoint ? "1px solid var(--color-border-subtle)" : "1px dashed var(--color-border-subtle)",
-              minHeight: "38px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              fontSize: "12px",
-              transition: "all 0.2s ease",
-            }}
-          >
-            {hoveredPoint ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", justifyContent: "space-between", flexWrap: "wrap" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <strong style={{ color: "var(--color-text)", fontSize: "13px" }}>
-                    {hoveredPoint.product.name}
-                  </strong>
-                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-muted)", fontSize: "11px" }}>
-                    ({hoveredPoint.product.sku})
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      padding: "1px 6px",
-                      borderRadius: "var(--radius-sm)",
-                      backgroundColor: "var(--color-surface)",
-                      border: "1px solid var(--color-border-subtle)",
-                    }}
-                  >
-                    {hoveredPoint.product.category?.name || "Uncategorized"}
-                  </span>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                  <div>
-                    <span style={{ color: "var(--color-text-secondary)" }}>Stock: </span>
-                    <strong
-                      style={{
-                        fontFamily: "var(--font-mono)",
-                        color: hoveredPoint.is_out_of_stock
-                          ? "var(--color-danger)"
-                          : hoveredPoint.is_low_stock
-                          ? "var(--color-warning)"
-                          : "var(--color-success)",
-                      }}
-                    >
-                      {parseFloat(hoveredPoint.stock_quantity).toFixed(1)} {hoveredPoint.product.unit}
-                    </strong>
-                  </div>
-                  <div>
-                    <span style={{ color: "var(--color-text-secondary)" }}>Threshold: </span>
-                    <strong style={{ fontFamily: "var(--font-mono)", color: "var(--color-warning)" }}>
-                      {parseFloat(hoveredPoint.reorder_level).toFixed(1)} {hoveredPoint.product.unit}
-                    </strong>
-                  </div>
-                  <div>
-                    <StatusBadge
-                      status={
-                        hoveredPoint.is_out_of_stock
-                          ? "OUT OF STOCK"
-                          : hoveredPoint.is_low_stock
-                          ? "LOW STOCK"
-                          : "IN STOCK"
-                      }
-                      variant={
-                        hoveredPoint.is_out_of_stock
-                          ? "danger"
-                          : hoveredPoint.is_low_stock
-                          ? "warning"
-                          : "success"
-                      }
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>
-                Tip: Hover over any product bar group to inspect on-hand stock and reorder thresholds.
-              </div>
-            )}
-          </div>
-
-          {/* SVG Bar Chart Canvas */}
-          {items.length === 0 ? (
-            <div
-              style={{
-                padding: "60px 0",
-                textAlign: "center",
-                color: "var(--color-text-muted)",
-                fontSize: "13px",
-              }}
-            >
-              No inventory data available to render the bar chart.
-            </div>
-          ) : (
-            <div style={{ width: "100%", overflowX: "auto" }}>
-              {(() => {
-                const chartWidth = 800;
-                const chartHeight = 280;
-                const padLeft = 60;
-                const padRight = 40;
-                const padTop = 30;
-                const padBottom = 65;
-                const usableWidth = chartWidth - padLeft - padRight;
-                const usableHeight = chartHeight - padTop - padBottom;
-
-                // Determine maximum value across stock and reorder levels
-                const rawMax = Math.max(
-                  ...items.map((it) =>
-                    Math.max(parseFloat(it.stock_quantity) || 0, parseFloat(it.reorder_level) || 0)
-                  )
-                );
-                // Graceful upper ceiling
-                const maxVal = Math.max(10, Math.ceil((rawMax * 1.25) / 5) * 5);
-
-                // Y-axis grid tiers (0%, 25%, 50%, 75%, 100%)
-                const yTiers = [0, 0.25, 0.5, 0.75, 1];
-
-                // Slot and bar sizing
-                const slotWidth = usableWidth / items.length;
-                const groupWidth = Math.min(80, Math.max(28, slotWidth * 0.65));
-                const barWidth = Math.max(8, (groupWidth - 6) / 2);
-
-                return (
-                  <svg
-                    viewBox={`0 0 ${chartWidth} ${chartHeight}`}
-                    style={{ width: "100%", height: "280px", minWidth: "500px", display: "block" }}
-                    onMouseLeave={() => setHoveredPoint(null)}
-                  >
-                    {/* Horizontal Gridlines & Y-Axis Labels */}
-                    {yTiers.map((tier) => {
-                      const y = padTop + (1 - tier) * usableHeight;
-                      const labelVal = Math.round(maxVal * tier);
-                      return (
-                        <g key={tier}>
-                          <line
-                            x1={padLeft}
-                            y1={y}
-                            x2={padLeft + usableWidth}
-                            y2={y}
-                            stroke="var(--color-border-subtle)"
-                            strokeWidth="1"
-                            strokeDasharray={tier === 0 ? "none" : "3 3"}
-                            opacity={tier === 0 ? 0.9 : 0.6}
-                          />
-                          <text
-                            x={padLeft - 10}
-                            y={y + 4}
-                            textAnchor="end"
-                            fill="var(--color-text-secondary)"
-                            fontSize="11px"
-                            fontFamily="var(--font-mono)"
-                          >
-                            {labelVal}
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    {/* Grouped Bars per Product */}
-                    {items.map((it, idx) => {
-                      const isHovered = hoveredPoint?.product.id === it.product.id;
-                      const current = Math.max(0, parseFloat(it.stock_quantity) || 0);
-                      const reorder = Math.max(0, parseFloat(it.reorder_level) || 0);
-
-                      const currentHeight = Math.max(current > 0 ? 3 : 2, (current / maxVal) * usableHeight);
-                      const reorderHeight = Math.max(reorder > 0 ? 3 : 2, (reorder / maxVal) * usableHeight);
-
-                      const slotCenterX = padLeft + idx * slotWidth + slotWidth / 2;
-                      const bar1X = slotCenterX - groupWidth / 2;
-                      const bar1Y = padTop + usableHeight - currentHeight;
-
-                      const bar2X = bar1X + barWidth + 6;
-                      const bar2Y = padTop + usableHeight - reorderHeight;
-
-                      const bar1Color = it.is_out_of_stock
-                        ? "#EF4444"
-                        : it.is_low_stock
-                        ? "#F59E0B"
-                        : "#10B981";
-
-                      return (
-                        <g
-                          key={it.product.id}
-                          style={{ cursor: "pointer" }}
-                          onMouseEnter={() => setHoveredPoint(it)}
-                        >
-                          {/* Hover Background Card */}
-                          {isHovered && (
-                            <rect
-                              x={slotCenterX - groupWidth / 2 - 8}
-                              y={padTop - 8}
-                              width={groupWidth + 16}
-                              height={usableHeight + 14}
-                              rx="6"
-                              fill="var(--color-text)"
-                              opacity="0.04"
-                            />
-                          )}
-
-                          {/* Bar 1: Current Stock */}
-                          <rect
-                            x={bar1X}
-                            y={bar1Y}
-                            width={barWidth}
-                            height={currentHeight}
-                            rx="4"
-                            ry="4"
-                            fill={bar1Color}
-                            opacity={isHovered ? 1 : 0.9}
-                            style={{ transition: "all 0.2s ease" }}
-                          />
-
-                          {/* Bar 1 Numeric Top Label */}
-                          <text
-                            x={bar1X + barWidth / 2}
-                            y={bar1Y - 4}
-                            textAnchor="middle"
-                            fill={bar1Color}
-                            fontSize="10px"
-                            fontWeight={700}
-                            fontFamily="var(--font-mono)"
-                          >
-                            {current.toFixed(1)}
-                          </text>
-
-                          {/* Bar 2: Reorder Threshold */}
-                          <rect
-                            x={bar2X}
-                            y={bar2Y}
-                            width={barWidth}
-                            height={reorderHeight}
-                            rx="4"
-                            ry="4"
-                            fill="rgba(245, 158, 11, 0.2)"
-                            stroke="#F59E0B"
-                            strokeWidth="1.5"
-                            opacity={isHovered ? 1 : 0.85}
-                            style={{ transition: "all 0.2s ease" }}
-                          />
-
-                          {/* Bar 2 Numeric Top Label */}
-                          {reorder > 0 && (
-                            <text
-                              x={bar2X + barWidth / 2}
-                              y={bar2Y - 4}
-                              textAnchor="middle"
-                              fill="#F59E0B"
-                              fontSize="10px"
-                              fontWeight={600}
-                              fontFamily="var(--font-mono)"
-                            >
-                              {reorder.toFixed(1)}
-                            </text>
-                          )}
-
-                          {/* X-Axis Product Label */}
-                          <text
-                            x={slotCenterX}
-                            y={padTop + usableHeight + 20}
-                            textAnchor="middle"
-                            fill={isHovered ? "var(--color-text)" : "var(--color-text-secondary)"}
-                            fontSize="11px"
-                            fontWeight={isHovered ? 700 : 500}
-                          >
-                            {it.product.name.length > 15
-                              ? `${it.product.name.slice(0, 14)}…`
-                              : it.product.name}
-                          </text>
-
-                          {/* X-Axis SKU Subtitle */}
-                          <text
-                            x={slotCenterX}
-                            y={padTop + usableHeight + 35}
-                            textAnchor="middle"
-                            fill="var(--color-text-muted)"
-                            fontSize="10px"
-                            fontFamily="var(--font-mono)"
-                          >
-                            {it.product.sku}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                );
-              })()}
-            </div>
-          )}
-        </div>
+        <StockLevelBarChart
+          items={items}
+          hoveredPoint={hoveredPoint}
+          setHoveredPoint={setHoveredPoint}
+        />
       )}
 
       {/* Filters Bar */}
@@ -788,24 +489,48 @@ export const InventoryPage = () => {
         }}
       >
         <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "8px", flex: 1, minWidth: "260px" }}>
-          <input
-            id="inventory-search-input"
-            type="text"
-            placeholder="Search product name, SKU, or barcode..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{
-              flex: 1,
-              height: "38px",
-              padding: "0 12px",
-              border: "1px solid var(--color-border)",
-              borderRadius: "var(--radius-md)",
-              fontSize: "13px",
-              color: "var(--color-text)",
-              backgroundColor: "var(--color-surface)",
-              outline: "none",
-            }}
-          />
+          <div style={{ position: "relative", flex: 1 }}>
+            <input
+              id="inventory-search-input"
+              type="text"
+              placeholder="Search product name, SKU, or barcode..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: "100%",
+                height: "38px",
+                padding: "0 28px 0 12px",
+                border: "1px solid var(--color-border)",
+                borderRadius: "var(--radius-md)",
+                fontSize: "13px",
+                color: "var(--color-text)",
+                backgroundColor: "var(--color-surface)",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={handleSearchClear}
+                style={{
+                  position: "absolute",
+                  right: "8px",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  color: "var(--color-text-muted)",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  padding: "2px",
+                }}
+                title="Clear search"
+              >
+                ✕
+              </button>
+            )}
+          </div>
           <Button
             type="submit"
             id="btn-inventory-search"
@@ -826,7 +551,6 @@ export const InventoryPage = () => {
             onChange={(e) => {
               setCategoryFilter(e.target.value);
               setPagination((prev) => ({ ...prev, page: 1 }));
-              setLoading(true);
             }}
             style={{
               height: "38px",
@@ -859,7 +583,6 @@ export const InventoryPage = () => {
             onChange={(e) => {
               setStockStatusFilter(e.target.value);
               setPagination((prev) => ({ ...prev, page: 1 }));
-              setLoading(true);
             }}
             style={{
               height: "38px",
@@ -893,16 +616,28 @@ export const InventoryPage = () => {
             color: "var(--color-danger)",
             fontSize: "13px",
             fontWeight: 500,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
-          {error}
+          <span>{error}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setRefreshTrigger((prev) => prev + 1)}
+          >
+            Retry
+          </Button>
         </div>
       )}
 
       {/* Inventory Table */}
       <DataTable
+        id="inventory-data-table"
         columns={columns}
         data={items}
+        keyExtractor={(row, idx) => row.product?.id || row.id || idx}
         loading={loading}
         emptyTitle="No inventory records found"
         emptyMessage="No items match your search or filter criteria."
@@ -916,7 +651,6 @@ export const InventoryPage = () => {
           totalItems={pagination.total}
           onPageChange={(p) => {
             setPagination((prev) => ({ ...prev, page: p }));
-            setLoading(true);
           }}
         />
       )}
@@ -994,7 +728,7 @@ export const InventoryPage = () => {
                 </div>
               </div>
 
-              <FormField label={`Quantity (${selectedProduct.unit})`} required id="modal-adjust-qty">
+              <FormField label={`Quantity (${selectedProduct.unit || "pcs"})`} required id="modal-adjust-qty">
                 <Input
                   type="number"
                   step="0.001"
@@ -1040,11 +774,10 @@ export const InventoryPage = () => {
                   onChange={(e) => setAdjustData({ ...adjustData, reason: e.target.value })}
                 >
                   <option value="PHYSICAL_COUNT">Physical Inventory Count Reconciliation</option>
-                  <option value="DAMAGE">Damaged Goods / Breakage</option>
-                  <option value="EXPIRY">Expired Stock Disposal</option>
+                  <option value="DAMAGED">Damaged Goods / Breakage</option>
+                  <option value="EXPIRED">Expired Stock Disposal</option>
                   <option value="CORRECTION">Ledger Correction</option>
-                  <option value="THEFT">Shrinkage / Discrepancy</option>
-                  <option value="OTHER">Other Reason</option>
+                  <option value="OTHER">Other Reason / Discrepancy</option>
                 </Select>
               </FormField>
 
@@ -1107,7 +840,10 @@ export const InventoryPage = () => {
             <select
               id="history-movement-type-filter"
               value={movementTypeFilter}
-              onChange={(e) => setMovementTypeFilter(e.target.value)}
+              onChange={(e) => {
+                setMovementTypeFilter(e.target.value);
+                setHistoryPagination((prev) => ({ ...prev, page: 1 }));
+              }}
               style={{
                 height: "36px",
                 padding: "0 10px",
@@ -1119,13 +855,13 @@ export const InventoryPage = () => {
               }}
             >
               <option value="">All Movement Types</option>
-              <option value="ADJUSTMENT_IN">ADJUSTMENT_IN</option>
-              <option value="ADJUSTMENT_OUT">ADJUSTMENT_OUT</option>
-              <option value="DAMAGED">DAMAGED</option>
-              <option value="EXPIRED">EXPIRED</option>
-              <option value="PURCHASE">PURCHASE</option>
-              <option value="SALE">SALE</option>
-              <option value="RETURN">RETURN</option>
+              <option value="ADJUSTMENT_IN">Adjustment In (+)</option>
+              <option value="ADJUSTMENT_OUT">Adjustment Out (-)</option>
+              <option value="PURCHASE">Purchase Receipt (+)</option>
+              <option value="SALE">Sale Deduction (-)</option>
+              <option value="RETURN">Return Restock (+)</option>
+              <option value="DAMAGED">Damaged Goods (-)</option>
+              <option value="EXPIRED">Expired Stock (-)</option>
             </select>
           </div>
 
@@ -1139,9 +875,20 @@ export const InventoryPage = () => {
                 borderRadius: "var(--radius-md)",
                 color: "var(--color-danger)",
                 fontSize: "13px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: "10px",
               }}
             >
-              {historyError}
+              <span>{historyError}</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setHistoryPagination((prev) => ({ ...prev }))}
+              >
+                Retry
+              </Button>
             </div>
           )}
 
@@ -1224,6 +971,403 @@ export const InventoryPage = () => {
           )}
         </div>
       </Drawer>
+    </div>
+  );
+};
+
+/* Subcomponents */
+
+const StockLevelBarChart = ({ items = [], hoveredPoint, setHoveredPoint }) => {
+  const list = Array.isArray(items) ? items : [];
+
+  // Determine maximum value across stock and reorder levels safely
+  const rawMax =
+    list.length > 0
+      ? Math.max(
+          ...list.map((it) =>
+            Math.max(parseFloat(it.stock_quantity) || 0, parseFloat(it.reorder_level) || 0)
+          )
+        )
+      : 0;
+  const maxVal = Math.max(10, Math.ceil((rawMax * 1.25) / 5) * 5);
+
+  const chartWidth = Math.max(800, list.length * 65);
+  const chartHeight = 280;
+  const padLeft = 60;
+  const padRight = 40;
+  const padTop = 30;
+  const padBottom = 65;
+  const usableWidth = chartWidth - padLeft - padRight;
+  const usableHeight = chartHeight - padTop - padBottom;
+
+  const yTiers = [0, 0.25, 0.5, 0.75, 1];
+
+  const slotWidth = list.length > 0 ? usableWidth / list.length : usableWidth;
+  const groupWidth = Math.min(70, Math.max(26, slotWidth * 0.65));
+  const barWidth = Math.max(8, (groupWidth - 6) / 2);
+
+  const hp = hoveredPoint?.product || hoveredPoint;
+  const hProdId = hp?.id || hoveredPoint?.id;
+  const hName = hp?.name || "Product";
+  const hSku = hp?.sku || "";
+  const hCat = hp?.category?.name || "Uncategorized";
+  const hUnit = hp?.unit || "units";
+  const hStock = parseFloat(hoveredPoint?.stock_quantity ?? 0);
+  const hReorder = parseFloat(hoveredPoint?.reorder_level ?? 0);
+  const hIsOut = Boolean(hoveredPoint?.is_out_of_stock);
+  const hIsLow = Boolean(hoveredPoint?.is_low_stock);
+
+  return (
+    <div
+      style={{
+        backgroundColor: "var(--color-surface)",
+        borderRadius: "var(--radius-lg)",
+        padding: "20px 24px",
+        border: "1px solid var(--color-border)",
+        boxShadow: "var(--shadow-sm)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "16px",
+      }}
+    >
+      {/* Chart Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: "12px",
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text)", margin: 0 }}>
+            Stock Level & Safety Reorder Threshold
+          </h2>
+          <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+            Comparative bar chart displaying on-hand stock quantities against safety reorder thresholds
+          </span>
+        </div>
+
+        {/* Legend & Summary Badges */}
+        <div style={{ display: "flex", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+          {/* Legend 1: Current Stock */}
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
+            <span
+              style={{
+                width: "14px",
+                height: "14px",
+                backgroundColor: "#10B981",
+                borderRadius: "3px",
+                display: "inline-block",
+              }}
+            />
+            <span style={{ fontWeight: 600 }}>Current Stock</span>
+          </div>
+
+          {/* Legend 2: Reorder Level */}
+          <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text)" }}>
+            <span
+              style={{
+                width: "14px",
+                height: "14px",
+                backgroundColor: "rgba(245, 158, 11, 0.25)",
+                border: "1.5px solid #F59E0B",
+                borderRadius: "3px",
+                display: "inline-block",
+              }}
+            />
+            <span style={{ fontWeight: 600 }}>Reorder Threshold</span>
+          </div>
+
+          {/* Quick Status Pill */}
+          <div
+            style={{
+              fontSize: "12px",
+              padding: "3px 10px",
+              borderRadius: "var(--radius-full)",
+              backgroundColor: "var(--color-bg)",
+              border: "1px solid var(--color-border)",
+              color: "var(--color-text-secondary)",
+              display: "flex",
+              gap: "6px",
+              alignItems: "center",
+            }}
+          >
+            <span>{list.length} items plotted</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Interactive Inspection Bar */}
+      <div
+        style={{
+          padding: "8px 14px",
+          borderRadius: "var(--radius-md)",
+          backgroundColor: hoveredPoint ? "var(--color-bg)" : "transparent",
+          border: hoveredPoint ? "1px solid var(--color-border-subtle)" : "1px dashed var(--color-border-subtle)",
+          minHeight: "38px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          fontSize: "12px",
+          transition: "all 0.2s ease",
+        }}
+      >
+        {hoveredPoint ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", justifyContent: "space-between", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <strong style={{ color: "var(--color-text)", fontSize: "13px" }}>
+                {hName}
+              </strong>
+              {hSku && (
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--color-text-muted)", fontSize: "11px" }}>
+                  ({hSku})
+                </span>
+              )}
+              <span
+                style={{
+                  fontSize: "11px",
+                  padding: "1px 6px",
+                  borderRadius: "var(--radius-sm)",
+                  backgroundColor: "var(--color-surface)",
+                  border: "1px solid var(--color-border-subtle)",
+                }}
+              >
+                {hCat}
+              </span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Stock: </span>
+                <strong
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    color: hIsOut
+                      ? "var(--color-danger)"
+                      : hIsLow
+                      ? "var(--color-warning)"
+                      : "var(--color-success)",
+                  }}
+                >
+                  {hStock.toFixed(1)} {hUnit}
+                </strong>
+              </div>
+              <div>
+                <span style={{ color: "var(--color-text-secondary)" }}>Threshold: </span>
+                <strong style={{ fontFamily: "var(--font-mono)", color: "var(--color-warning)" }}>
+                  {hReorder.toFixed(1)} {hUnit}
+                </strong>
+              </div>
+              <div>
+                <StatusBadge
+                  status={
+                    hIsOut
+                      ? "OUT OF STOCK"
+                      : hIsLow
+                      ? "LOW STOCK"
+                      : "IN STOCK"
+                  }
+                  variant={
+                    hIsOut
+                      ? "danger"
+                      : hIsLow
+                      ? "warning"
+                      : "success"
+                  }
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ color: "var(--color-text-muted)", fontStyle: "italic" }}>
+            Tip: Hover over any product bar group to inspect on-hand stock and safety reorder thresholds.
+          </div>
+        )}
+      </div>
+
+      {/* SVG Bar Chart Canvas */}
+      {list.length === 0 ? (
+        <div
+          style={{
+            padding: "60px 0",
+            textAlign: "center",
+            color: "var(--color-text-muted)",
+            fontSize: "13px",
+          }}
+        >
+          No inventory data available to render the bar chart.
+        </div>
+      ) : (
+        <div style={{ width: "100%", overflowX: "auto" }}>
+          <svg
+            viewBox={`0 0 ${chartWidth} ${chartHeight}`}
+            style={{ width: "100%", height: "280px", minWidth: "500px", display: "block" }}
+            onMouseLeave={() => setHoveredPoint(null)}
+          >
+            {/* Horizontal Gridlines & Y-Axis Labels */}
+            {yTiers.map((tier) => {
+              const y = padTop + (1 - tier) * usableHeight;
+              const labelVal = Math.round(maxVal * tier);
+              return (
+                <g key={tier}>
+                  <line
+                    x1={padLeft}
+                    y1={y}
+                    x2={padLeft + usableWidth}
+                    y2={y}
+                    stroke="var(--color-border-subtle)"
+                    strokeWidth="1"
+                    strokeDasharray={tier === 0 ? "none" : "3 3"}
+                    opacity={tier === 0 ? 0.9 : 0.6}
+                  />
+                  <text
+                    x={padLeft - 10}
+                    y={y + 4}
+                    textAnchor="end"
+                    fill="var(--color-text-secondary)"
+                    fontSize="11px"
+                    fontFamily="var(--font-mono)"
+                  >
+                    {labelVal}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Grouped Bars per Product */}
+            {list.map((it, idx) => {
+              const p = it.product || it;
+              const prodId = p?.id || it?.id || idx;
+              const prodName = p?.name || "Product";
+              const prodSku = p?.sku || "";
+
+              const isHovered = hProdId === prodId;
+              const current = Math.max(0, parseFloat(it.stock_quantity) || 0);
+              const reorder = Math.max(0, parseFloat(it.reorder_level) || 0);
+
+              const currentHeight = Math.max(current > 0 ? 4 : 2, (current / maxVal) * usableHeight);
+              const reorderHeight = Math.max(reorder > 0 ? 4 : 2, (reorder / maxVal) * usableHeight);
+
+              const slotCenterX = padLeft + idx * slotWidth + slotWidth / 2;
+              const bar1X = slotCenterX - groupWidth / 2;
+              const bar1Y = padTop + usableHeight - currentHeight;
+
+              const bar2X = bar1X + barWidth + 6;
+              const bar2Y = padTop + usableHeight - reorderHeight;
+
+              const bar1Color = it.is_out_of_stock
+                ? "#EF4444"
+                : it.is_low_stock
+                ? "#F59E0B"
+                : "#10B981";
+
+              return (
+                <g
+                  key={prodId}
+                  style={{ cursor: "pointer" }}
+                  onMouseEnter={() => setHoveredPoint(it)}
+                >
+                  {/* Hover Background Card */}
+                  {isHovered && (
+                    <rect
+                      x={slotCenterX - groupWidth / 2 - 8}
+                      y={padTop - 8}
+                      width={groupWidth + 16}
+                      height={usableHeight + 14}
+                      rx="6"
+                      fill="var(--color-text)"
+                      opacity="0.04"
+                    />
+                  )}
+
+                  {/* Bar 1: Current Stock */}
+                  <rect
+                    x={bar1X}
+                    y={bar1Y}
+                    width={barWidth}
+                    height={currentHeight}
+                    rx="4"
+                    ry="4"
+                    fill={bar1Color}
+                    opacity={isHovered ? 1 : 0.9}
+                    style={{ transition: "all 0.2s ease" }}
+                  />
+
+                  {/* Bar 1 Numeric Top Label */}
+                  <text
+                    x={bar1X + barWidth / 2}
+                    y={bar1Y - 4}
+                    textAnchor="middle"
+                    fill={bar1Color}
+                    fontSize="10px"
+                    fontWeight={700}
+                    fontFamily="var(--font-mono)"
+                  >
+                    {current.toFixed(1)}
+                  </text>
+
+                  {/* Bar 2: Reorder Threshold */}
+                  <rect
+                    x={bar2X}
+                    y={bar2Y}
+                    width={barWidth}
+                    height={reorderHeight}
+                    rx="4"
+                    ry="4"
+                    fill="rgba(245, 158, 11, 0.2)"
+                    stroke="#F59E0B"
+                    strokeWidth="1.5"
+                    opacity={isHovered ? 1 : 0.85}
+                    style={{ transition: "all 0.2s ease" }}
+                  />
+
+                  {/* Bar 2 Numeric Top Label */}
+                  {reorder > 0 && (
+                    <text
+                      x={bar2X + barWidth / 2}
+                      y={bar2Y - 4}
+                      textAnchor="middle"
+                      fill="#F59E0B"
+                      fontSize="10px"
+                      fontWeight={600}
+                      fontFamily="var(--font-mono)"
+                    >
+                      {reorder.toFixed(1)}
+                    </text>
+                  )}
+
+                  {/* X-Axis Product Label */}
+                  <text
+                    x={slotCenterX}
+                    y={padTop + usableHeight + 20}
+                    textAnchor="middle"
+                    fill={isHovered ? "var(--color-text)" : "var(--color-text-secondary)"}
+                    fontSize="11px"
+                    fontWeight={isHovered ? 700 : 500}
+                  >
+                    {prodName.length > 14 ? `${prodName.slice(0, 13)}…` : prodName}
+                  </text>
+
+                  {/* X-Axis SKU Subtitle */}
+                  {prodSku && (
+                    <text
+                      x={slotCenterX}
+                      y={padTop + usableHeight + 35}
+                      textAnchor="middle"
+                      fill="var(--color-text-muted)"
+                      fontSize="10px"
+                      fontFamily="var(--font-mono)"
+                    >
+                      {prodSku}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
+        </div>
+      )}
     </div>
   );
 };
