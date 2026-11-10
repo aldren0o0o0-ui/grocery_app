@@ -313,27 +313,35 @@
   display: none;
   position: fixed;
   inset: 0;
-  background-color: rgba(15, 23, 42, 0.4);
-  backdrop-filter: blur(2px);
-  z-index: 50;
+  background-color: rgba(15, 23, 42, 0.35);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  z-index: 55;
   opacity: 0;
+  pointer-events: none;
   transition: opacity var(--transition-normal);
 }
 
 .mobile-drawer-overlay.open {
   display: block;
   opacity: 1;
+  pointer-events: auto;
 }
 
 /* Responsive Media Queries */
 @media (max-width: 1023px) {
   .app-sidebar {
+    z-index: 60;
     transform: translateX(-100%);
     box-shadow: var(--shadow-lg);
   }
 
   .app-sidebar.mobile-open {
     transform: translateX(0);
+  }
+
+  .mobile-drawer-overlay {
+    z-index: 55;
   }
 
   .app-main-content {

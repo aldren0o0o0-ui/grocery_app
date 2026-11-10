@@ -1,4 +1,7 @@
-from flask import Flask
+from pathlib import Path
+
+from flask import Flask, send_from_directory
+from sqlalchemy import text
 
 from .config import Config
 from .extensions import db, migrate, cors
@@ -7,7 +10,10 @@ from .commands import register_commands
 # Register all domain models for Flask-SQLAlchemy and Alembic discovery
 from . import modules  # noqa: F401
 
-from sqlalchemy import text
+
+# React production build directory
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
 
 def create_app():
     app = Flask(__name__)
@@ -45,10 +51,24 @@ def create_app():
     app.register_blueprint(expenses_bp)
     app.register_blueprint(dashboard_bp)
 
-    raw_frontend_url = app.config.get("FRONTEND_URL", "http://localhost:5173")
-    origins = [o.strip() for o in raw_frontend_url.split(",") if o.strip()]
+    # ---------------------------------------------------------
+    # CORS
+    # ---------------------------------------------------------
+
+    raw_frontend_url = app.config.get(
+        "FRONTEND_URL",
+        "http://localhost:5173",
+    )
+
+    origins = [
+        origin.strip()
+        for origin in raw_frontend_url.split(",")
+        if origin.strip()
+    ]
+
     if "http://localhost:5173" not in origins:
         origins.append("http://localhost:5173")
+
     if "http://127.0.0.1:5173" not in origins:
         origins.append("http://127.0.0.1:5173")
 
@@ -62,11 +82,15 @@ def create_app():
         supports_credentials=True,
     )
 
+    # ---------------------------------------------------------
+    # API HEALTH
+    # ---------------------------------------------------------
+
     @app.get("/api/health")
     def health():
         return {
             "status": "ok",
-            "message": "Grocery SME API is running"
+            "message": "Grocery SME API is running",
         }, 200
 
     @app.get("/api/health/database")
@@ -76,14 +100,125 @@ def create_app():
 
             return {
                 "status": "ok",
-                "database": "connected"
+                "database": "connected",
             }, 200
 
         except Exception:
             return {
                 "status": "error",
-                "database": "disconnected"
+                "database": "disconnected",
             }, 500
 
+    # ---------------------------------------------------------
+    # REACT SPA
+    # ---------------------------------------------------------
+
+    @app.get("/", defaults={"path": ""})
+    @app.get("/<path:path>")
+    def serve_react(path):
+        # Never intercept API routes.
+        if path.startswith("api/"):
+            return {"error": "API route not found"}, 404
+
+        requested_file = FRONTEND_DIST / path
+
+        if requested_file.is_file():
+            return send_from_directory(FRONTEND_DIST, path)
+
+        # React Router fallback.
+        return send_from_directory(FRONTEND_DIST, "index.html")
+
     return app
+
+
+
+
+# from flask import Flask
+
+# from .config import Config
+# from .extensions import db, migrate, cors
+# from .commands import register_commands
+
+# # Register all domain models for Flask-SQLAlchemy and Alembic discovery
+# from . import modules  # noqa: F401
+
+# from sqlalchemy import text
+
+# def create_app():
+#     app = Flask(__name__)
+
+#     app.config.from_object(Config)
+
+#     db.init_app(app)
+#     migrate.init_app(app, db)
+
+#     register_commands(app)
+
+#     # Register blueprints
+#     from .modules.auth.routes import auth_bp
+#     from .modules.users.routes import users_bp
+#     from .modules.categories.routes import categories_bp
+#     from .modules.products.routes import products_bp
+#     from .modules.inventory.routes import inventory_bp
+#     from .modules.suppliers.routes import suppliers_bp
+#     from .modules.purchasing.routes import purchasing_bp
+#     from .modules.sales.routes import sales_bp
+#     from .modules.returns.routes import returns_bp
+#     from .modules.expenses.routes import expense_categories_bp, expenses_bp
+#     from .modules.dashboard.routes import dashboard_bp
+
+#     app.register_blueprint(auth_bp)
+#     app.register_blueprint(users_bp)
+#     app.register_blueprint(categories_bp)
+#     app.register_blueprint(products_bp)
+#     app.register_blueprint(inventory_bp)
+#     app.register_blueprint(suppliers_bp)
+#     app.register_blueprint(purchasing_bp)
+#     app.register_blueprint(sales_bp)
+#     app.register_blueprint(returns_bp)
+#     app.register_blueprint(expense_categories_bp)
+#     app.register_blueprint(expenses_bp)
+#     app.register_blueprint(dashboard_bp)
+
+#     raw_frontend_url = app.config.get("FRONTEND_URL", "http://localhost:5173")
+#     origins = [o.strip() for o in raw_frontend_url.split(",") if o.strip()]
+#     if "http://localhost:5173" not in origins:
+#         origins.append("http://localhost:5173")
+#     if "http://127.0.0.1:5173" not in origins:
+#         origins.append("http://127.0.0.1:5173")
+
+#     cors.init_app(
+#         app,
+#         resources={
+#             r"/api/*": {
+#                 "origins": origins,
+#             }
+#         },
+#         supports_credentials=True,
+#     )
+
+#     @app.get("/api/health")
+#     def health():
+#         return {
+#             "status": "ok",
+#             "message": "Grocery SME API is running"
+#         }, 200
+
+#     @app.get("/api/health/database")
+#     def database_health():
+#         try:
+#             db.session.execute(text("SELECT 1"))
+
+#             return {
+#                 "status": "ok",
+#                 "database": "connected"
+#             }, 200
+
+#         except Exception:
+#             return {
+#                 "status": "error",
+#                 "database": "disconnected"
+#             }, 500
+
+#     return app
 
