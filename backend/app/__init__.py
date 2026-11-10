@@ -120,13 +120,25 @@ def create_app():
         if path.startswith("api/"):
             return {"error": "API route not found"}, 404
 
-        requested_file = FRONTEND_DIST / path
+        index_file = FRONTEND_DIST / "index.html"
+        if index_file.is_file():
+            requested_file = FRONTEND_DIST / path
+            if requested_file.is_file():
+                return send_from_directory(FRONTEND_DIST, path)
+            # React Router fallback
+            return send_from_directory(FRONTEND_DIST, "index.html")
 
-        if requested_file.is_file():
-            return send_from_directory(FRONTEND_DIST, path)
+        # If frontend is not bundled with the backend (e.g. standalone API deployment)
+        if not path:
+            return {
+                "status": "ok",
+                "service": "Grocery SME Backend API",
+                "message": "API is running. Access endpoints under /api",
+                "health": "/api/health",
+                "database": "/api/health/database",
+            }, 200
 
-        # React Router fallback.
-        return send_from_directory(FRONTEND_DIST, "index.html")
+        return {"error": "Not found"}, 404
 
     return app
 
