@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from flask import Flask, send_from_directory
@@ -24,6 +25,11 @@ def create_app():
     migrate.init_app(app, db)
 
     register_commands(app)
+
+    # Automatically run migrations & seed roles / initial owner if enabled
+    if os.getenv("AUTO_INIT_DB", "true").lower() in ("true", "1", "yes"):
+        from .init_db import auto_init_database
+        auto_init_database(app)
 
     # Register blueprints
     from .modules.auth.routes import auth_bp
@@ -97,16 +103,21 @@ def create_app():
     def database_health():
         try:
             db.session.execute(text("SELECT 1"))
+            from sqlalchemy import func
+            from app.modules.users.models import User
+            user_count = db.session.execute(db.select(func.count(User.id))).scalar_one()
 
             return {
                 "status": "ok",
                 "database": "connected",
+                "users_count": user_count,
             }, 200
 
-        except Exception:
+        except Exception as e:
             return {
                 "status": "error",
-                "database": "disconnected",
+                "database": "disconnected_or_uninitialized",
+                "details": str(e),
             }, 500
 
     # ---------------------------------------------------------

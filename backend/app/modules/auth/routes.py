@@ -62,8 +62,10 @@ def login():
         return set_refresh_cookie(resp, refresh_token)
     except AppError as e:
         return api_error(e.code, e.message, e.status_code)
-    except Exception:
-        return api_error("INTERNAL_ERROR", "An unexpected error occurred during login.", 500)
+    except Exception as e:
+        import traceback
+        current_app.logger.error("Login failed unexpectedly: %s\n%s", e, traceback.format_exc())
+        return api_error("INTERNAL_ERROR", f"An unexpected error occurred during login: {str(e)}", 500)
 
 
 @auth_bp.post("/refresh")
