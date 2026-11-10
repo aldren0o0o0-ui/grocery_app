@@ -28,8 +28,11 @@ def create_app():
 
     # Automatically run migrations & seed roles / initial owner if enabled
     if os.getenv("AUTO_INIT_DB", "true").lower() in ("true", "1", "yes"):
-        from .init_db import auto_init_database
-        auto_init_database(app)
+        try:
+            from .init_db import auto_init_database
+            auto_init_database(app)
+        except BaseException as e:
+            app.logger.error("Database auto-init caught error: %s", e)
 
     # Register blueprints
     from .modules.auth.routes import auth_bp

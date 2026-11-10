@@ -8,11 +8,12 @@ load_dotenv()
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "change-this-development-secret")
 
-    raw_database_url = os.getenv("DATABASE_URL")
-    if raw_database_url and raw_database_url.startswith("postgres://"):
-        raw_database_url = raw_database_url.replace("postgres://", "postgresql+psycopg://", 1)
-    elif raw_database_url and raw_database_url.startswith("postgresql://") and not raw_database_url.startswith("postgresql+"):
-        raw_database_url = raw_database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    raw_database_url = os.getenv("DATABASE_URL", "").strip() or None
+    if raw_database_url:
+        if raw_database_url.startswith("postgres://"):
+            raw_database_url = raw_database_url.replace("postgres://", "postgresql+psycopg://", 1)
+        elif raw_database_url.startswith("postgresql://") and not raw_database_url.startswith("postgresql+"):
+            raw_database_url = raw_database_url.replace("postgresql://", "postgresql+psycopg://", 1)
     SQLALCHEMY_DATABASE_URI = raw_database_url
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
